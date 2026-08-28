@@ -1,0 +1,53 @@
+# Publish the Python client to PyPI. Installed into craterviewai/craterview-python by
+# release-sdk.yml in the platform repository; edit it there, not here — this file is
+# overwritten on every release.
+#
+# **No API token exists.** Authentication is PyPI Trusted Publishing: the job presents a
+# short-lived OIDC identity naming this repository and this workflow, and PyPI exchanges it for
+# an upload token that expires in minutes. Nothing long-lived is stored, so nothing can leak
+# from a secrets page.
+#
+# Fires on `v*` in this repository, which only the platform's release job writes.
+name: publish
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # The environment is where the trusted publisher is bound and where an approval gate can be
+    # hung if one is ever wanted. It must match the name registered on PyPI.
+    environment: pypi
+    permissions:
+      contents: read
+      # What mints the OIDC token. Without it the exchange fails and nothing uploads.
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      # Pinned exactly, like everything else this platform builds from: a build backend that
+      # moves on its own changes the artefact without changing the source.
+      - run: pip install "build==1.6.0"
+
+      # A clean tree, so no stale `build/` directory can contribute a file. `python -m build`
+      # reuses one when it finds it, and the copy it keeps is refreshed by mtime rather than by
+      # content — which is a comparison that has no reason to be right after a branch switch.
+      - name: Build the wheel and the sdist
+        run: |
+          set -euo pipefail
+          rm -rf build dist
+          python -m build
+
+      - name: What is about to be published
+        run: ls -l dist/
+
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
