@@ -1,0 +1,45 @@
+[project]
+name = "craterview"
+version = "0.1.0"
+description = "Python client for the CraterView image enhancement API"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{name = "Bernardt Duvenhage", email = "bernardt.duvenhage@gmail.com"}]
+requires-python = ">=3.9"
+# A floor, not a pin: it says what this client needs, not what it was last built against.
+# Raising it makes every consumer upgrade, so it moves when the code needs something newer.
+# `.python-version` beside this file is 3.9 — the oldest interpreter the package claims, so a
+# proposed change is checked against the whole supported range rather than the newest.
+dependencies = ["requests>=2.31"]
+keywords = ["upscaling", "super-resolution", "image-restoration", "api-client"]
+# No `License ::` classifier: PEP 639 deprecates it in favour of the SPDX expression above,
+# and setuptools rejects a build that carries both.
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Graphics :: Graphics Conversion",
+    "Topic :: Scientific/Engineering :: Image Processing",
+]
+
+[project.urls]
+Homepage = "https://craterview.ai"
+Documentation = "https://api.craterview.ai/docs"
+Source = "https://github.com/craterviewai/craterview-python"
+Issues = "https://github.com/craterviewai/craterview-python/issues"
+
+[build-system]
+# 77 is where setuptools implements PEP 639 — the SPDX `license` string and
+# `license-files` above. Older versions ignore both and the wheel ships unlicensed.
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["craterview*"]
