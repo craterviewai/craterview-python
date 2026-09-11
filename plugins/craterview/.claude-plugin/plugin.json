@@ -1,0 +1,12 @@
+{
+  "name": "craterview",
+  "version": "0.1.0",
+  "description": "Enhance, enlarge and restore photographs through CraterView's hosted tools. Installing this connects the server; the skill says which tool to reach for and what a result means.",
+  "author": {
+    "name": "CraterView",
+    "url": "https://craterview.ai"
+  },
+  "homepage": "https://craterview.ai",
+  "license": "Apache-2.0",
+  "keywords": ["image", "upscale", "enhance", "restore", "photo", "mcp"]
+}
