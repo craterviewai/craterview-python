@@ -9,10 +9,6 @@
 The three-call upload/submit/poll dance is the API's shape, not something a caller should
 have to reimplement, so the client collapses it into one method and streams the bytes for
 you.
-
-**This file is published**, to GitHub and PyPI, and is read by people who have this package
-and nothing else. Write for them: what the client does and what a caller has to know, never
-how the service behind it is built.
 """
 
 from __future__ import annotations
@@ -44,9 +40,12 @@ except PackageNotFoundError:
     __version__ = "0.0.0+dev"
 
 DEFAULT_BASE_URL = "https://api.craterview.ai"
-# The server rejects a longer wait outright, so asking for one costs a 422 rather than a
-# longer wait. Keep in step with MAX_WAIT_SECONDS in the gateway.
+# The server rejects a longer wait outright, so asking for one costs a 422 rather than the
+# wait you asked for. `run()` clamps to this rather than letting that happen.
 MAX_SERVER_WAIT = 30.0
+# The largest page the job history serves. Same reasoning: a bigger `limit` is refused, so
+# `jobs()` clamps rather than spending a request to be told no.
+MAX_PAGE = 200
 
 
 def new_idempotency_key() -> str:
@@ -57,8 +56,8 @@ def new_idempotency_key() -> str:
         key = new_idempotency_key()          # once, before the first attempt
         for attempt in range(3):
             try:
-                job = cv.submit("cv-restore-v1", input_key, idempotency_key=key,
-                                style="photo")
+                job = cv.submit("cv-enhance-v3", input_key, idempotency_key=key,
+                                scale=4)
                 break
             except (ConnectionError, TimeoutError):
                 continue                      # same key, so at most one job is created
@@ -146,7 +145,7 @@ def verify_webhook(body: bytes, headers: "dict[str, str] | Any", secret: str,
             ...
 
     Raises `InvalidSignature` if it does not check out. **Verify before you parse**, and
-    pass the raw bytes exactly as received: re-serialising the JSON changes them, and the
+    pass the raw bytes exactly as received: re-serializing the JSON changes them, and the
     signature is over what was sent rather than over what your framework made of it.
 
     `headers` may be a plain dict or any mapping with case-insensitive `get`, which is what
@@ -253,8 +252,8 @@ class Job:
     it should expect nothing there.
 
     `community` says the job was submitted against a balance of zero and is on the queue
-    served after priority work, which takes a small share of it rather than only what is
-    left. Nothing is refused for want of credit — credit buys a place at the front of the
+    served after priority work, which always takes a share of it rather than only what is
+    left over — so it waits longer at busy times and never stalls behind paid work. Nothing is refused for want of credit — credit buys a place at the front of the
     queue, not the right to submit — so an empty balance means a longer wait and never an
     error.
     """
@@ -366,7 +365,7 @@ class Job:
         #
         # A key the server omitted is left out rather than passed as None, so each field
         # falls back to the default declared above. That matters for the first field whose
-        # default is not None: `community` is False, and an older gateway that does not
+        # default is not None: `community` is False, and an older server that does not
         # send it must leave it False rather than making it null.
         known = {f.name: payload[f.name] for f in _dataclass_fields(cls)
                  if not f.name.startswith("_") and f.name in payload}
@@ -423,23 +422,27 @@ class CraterView:
 
         Needs a key, and not only because the figures are live: `queue_depth` and
         `community` are answered *for the queue your key would use*. The API looks up the
-        account's balance and reports the queue a job from this key would land in — an
-        account in credit gets the priority queue, an account at zero the community one,
-        which is served after priority work and takes a small share of it. So two keys asking
-        at the same moment can get different numbers, and buying credit changes yours.
+        account and reports the queue a job from this key would land in — an account that
+        has paid for priority, by holding credit or by subscribing, gets the priority queue,
+        and one that has not gets the community queue, which is served after priority work
+        and always takes a share of it. So two keys asking at the same moment can get
+        different numbers, and paying changes yours.
 
         `community` here means what `Job.community` means on a submitted job, and
         `queue_depth` is how much work is ahead of you on that queue before you submit —
         the counterpart to `Job.eta_seconds` once you have.
 
         A model that is available is not always listed — a model in trial, or being
-        retired, stays usable by name while absent from this catalogue.
+        retired, stays usable by name while absent from this catalog.
 
         And a model that is listed is not always usable: `coming_soon` marks one that is
         announced but not yet in service, and submitting to it raises with 409 until it
         launches. Everything else published about it is final, so an integration can be
         written against it in advance. `video_coming_soon` says the same of one model's
         video, which is why `accepts` names no clip for it yet.
+
+        `tenure` says how long a model is for: `fixed` is a lasting part of the service,
+        and `comet` is a featured model that may be withdrawn at short notice.
         """
         return self._request("GET", "/v1/models")
 
@@ -504,10 +507,14 @@ class CraterView:
 
         Scoped to the account rather than to this key, so a key sees every job the account
         has run and not only the ones it submitted itself.
+
+        `limit` is how many jobs one request fetches, not how many you get: iteration
+        continues until the history runs out. 200 is the largest page the API serves, and a
+        bigger number is fetched as 200 rather than sent and refused.
         """
         before = None
         while True:
-            query = f"/v1/jobs?limit={min(limit, 200)}"
+            query = f"/v1/jobs?limit={min(limit, MAX_PAGE)}"
             if status:
                 query += f"&status={status}"
             if before:
@@ -598,7 +605,7 @@ class CraterView:
             time.sleep(poll)
         raise CraterViewError(f"job {job_id} did not finish within {timeout}s")
 
-    def run(self, image: str | Path | bytes | BinaryIO, *, model: str = "cv-restore-v1",
+    def run(self, image: str | Path | bytes | BinaryIO, *, model: str = "cv-enhance-v3",
                 wait: float = MAX_SERVER_WAIT, timeout: float = 600,
                 raise_on_failure: bool = True, **params) -> Job:
         """Upload, submit and wait, in one call — the common case.

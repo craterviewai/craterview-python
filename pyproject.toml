@@ -1,6 +1,6 @@
 [project]
 name = "craterview"
-version = "0.1.0"
+version = "0.1.5"
 description = "Python client for the CraterView image enhancement API"
 readme = "README.md"
 license = "Apache-2.0"
@@ -13,7 +13,7 @@ requires-python = ">=3.9"
 # proposed change is checked against the whole supported range rather than the newest.
 dependencies = ["requests>=2.31"]
 keywords = ["upscaling", "super-resolution", "image-restoration", "api-client"]
-# No `License ::` classifier: PEP 639 deprecates it in favour of the SPDX expression above,
+# No `License ::` classifier: PEP 639 deprecates it in favor of the SPDX expression above,
 # and setuptools rejects a build that carries both.
 classifiers = [
     "Development Status :: 3 - Alpha",

@@ -15,7 +15,7 @@ Python 3.9 or newer. `requests` is the only dependency.
 from craterview import CraterView
 
 cv = CraterView(api_key="cv_...")
-result = cv.run("photo.jpg", style="photo")
+result = cv.run("photo.jpg", scale=4)
 result.save("photo-4x.jpg")
 ```
 
@@ -27,7 +27,7 @@ reimplement.
 
 Keys begin with `cv_` and are issued from your dashboard. Pass one to the constructor, or
 leave it out and the client talks to the API unauthenticated — useful only against a local
-development gateway.
+development server.
 
 ```python
 cv = CraterView(api_key=os.environ["CRATERVIEW_API_KEY"])
@@ -41,11 +41,11 @@ credential for programs; it is not a login.
 ```python
 job = cv.run(
     image,                       # path, str, bytes, or a file object
-    model="cv-restore-v1",        # default
+    model="cv-enhance-v3",       # default
     wait=30.0,                   # seconds to hold the connection open
     timeout=600,                 # total seconds before giving up
     raise_on_failure=True,
-    **params,                    # model parameters, e.g. style="photo"
+    **params,                    # model parameters, e.g. scale=4
 )
 ```
 
@@ -62,7 +62,7 @@ Useful when you want to hold the key, submit later, or fan out.
 
 ```python
 input_key = cv.upload("photo.jpg")                       # → "inputs/..."
-job = cv.submit("cv-restore-v1", input_key, style="photo")
+job = cv.submit("cv-enhance-v3", input_key, scale=4)
 job = cv.wait_for(job, timeout=600)
 data = job.bytes()
 ```
@@ -85,7 +85,7 @@ from craterview import new_idempotency_key
 key = new_idempotency_key()                # once, before the first attempt
 for attempt in range(3):
     try:
-        job = cv.submit("cv-restore-v1", input_key, idempotency_key=key, style="photo")
+        job = cv.submit("cv-enhance-v3", input_key, idempotency_key=key, scale=4)
         break
     except (ConnectionError, TimeoutError):
         continue                           # same key, so at most one job is ever created
@@ -120,7 +120,7 @@ Every field the API publishes on a job is exposed here.
 | `error_code` | The same fact, as a stable identifier. Branch on this, show the other |
 | `credits` | **What you were billed** |
 | `eta_seconds` | The estimate made at submit. Absent once the job has settled |
-| `community` | True when the job is on the community queue: served after priority work, taking a small share of it |
+| `community` | True when the job is on the community queue: served after priority work, always taking a share of it, so it never stalls behind paid work |
 | `output_url`, `download_url` | The result, presigned. One to display, one to save |
 | `thumb_url` | A small JPEG of the result, for listings. Null when none was drawn |
 | `input_url` | The file you sent. Null once it has expired — inputs go after a day |
@@ -143,9 +143,11 @@ exactly that length and nothing else. You do not pass it — it is read off the 
 which is what makes it impossible to get wrong.
 
 **Running out of credit does not stop you.** A job submitted against a balance of zero is
-accepted, charged and run — it simply waits in the community queue for capacity that paid
-work is not using, and comes back with `community` set. There is no payment error to
-handle: credit buys a place at the front of the queue rather than the right to submit.
+accepted, charged and run — it simply waits in the community queue, which is served after
+paid work and always takes a share of it, so it never stalls behind paid work. It comes back
+with `community` set. There is no payment error to handle:
+paying — with credit, or with a subscription — buys a place at the front of the queue rather
+than the right to submit.
 `eta_seconds` covers the whole wait, queue time included, so a community job simply
 reports a longer one.
 
@@ -187,7 +189,7 @@ Every copy of a delivery states the same thing, so the first one you accept is t
 answer — later copies of an `id` you have already handled can be dropped rather than
 reconciled.
 
-**Pass the raw bytes.** Most frameworks parse JSON for you, and re-serialising it changes the
+**Pass the raw bytes.** Most frameworks parse JSON for you, and re-serializing it changes the
 bytes the signature was computed over. In Flask that is `request.get_data()`, in Django
 `request.body`, in FastAPI `await request.body()`.
 
@@ -232,7 +234,9 @@ cv.job("job_...")                 # one job by id
 cv.usage()                        # credit balance, spend and job counts
 ```
 
-`jobs()` is a generator and pages for you.
+`jobs()` is a generator and pages for you. `limit` is how many jobs one request fetches, not
+how many you get: it keeps going until your history runs out. 200 is the largest page the
+API serves, and a bigger number is fetched as 200.
 
 ## Configuration
 
@@ -244,7 +248,20 @@ CraterView(
 )
 ```
 
-`base_url` is what you change to point at a local gateway.
+`base_url` is what you change to point at a local server.
+
+## From Claude Code
+
+This repository is also a Claude Code marketplace. Two plugins: `craterview` connects
+CraterView's hosted tools so the assistant enhances images in the conversation, and
+`craterview-api` teaches an agent to call the API from code with this client. See
+[`plugins/`](plugins/) for what each does and how it finds a key.
+
+```
+/plugin marketplace add craterviewai/craterview-python
+/plugin install craterview@craterviewai
+/plugin install craterview-api@craterviewai
+```
 
 ## Versioning
 
@@ -253,7 +270,7 @@ or changes the type of one, gets a minor bump while this is `0.x` and a major bu
 `1.0.0`; anything purely additive gets a patch. Pin what you depend on.
 
 The API this wraps adds fields to its responses without warning, so treat an unfamiliar key in
-`result` or a `status` you do not recognise as something to ignore rather than to fail on.
+`result` or a `status` you do not recognize as something to ignore rather than to fail on.
 
 ## License
 

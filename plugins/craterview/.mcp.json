@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "craterview": {
+      "type": "http",
+      "url": "https://mcp.craterview.ai/mcp"
+    }
+  }
+}

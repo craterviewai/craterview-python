@@ -1,0 +1,12 @@
+{
+  "name": "craterview-api",
+  "version": "0.1.1",
+  "description": "Call the CraterView image enhancement API from code: the Python and TypeScript clients, the job flow, retries, webhooks, and how to get a key. No hosted tools; for an agent that writes or runs code.",
+  "author": {
+    "name": "CraterView",
+    "url": "https://craterview.ai"
+  },
+  "homepage": "https://craterview.ai",
+  "license": "Apache-2.0",
+  "keywords": ["image", "upscale", "enhance", "restore", "api", "sdk", "python", "typescript"]
+}
