@@ -137,7 +137,7 @@ Every field the API publishes on a job is exposed here.
 | `error` | Set when the job failed. Safe to show a user |
 | `error_code` | The same fact, as a stable identifier. Branch on this, show the other |
 | `credits` | **What you were billed** |
-| `eta_seconds` | Seconds until the job is expected to finish, recomputed on every read — it counts down while the job runs. Absent once the job has settled |
+| `eta_seconds` | Seconds until the job is expected to finish, recomputed on every read — it counts down while the job runs. Absent once the job has settled. Estimated for your image's size when `upload()` could read it — its header is read with Pillow, nothing is decoded — or when you pass `input_megapixels` to `submit()`; for a typical image otherwise |
 | `community` | True when the job is on the community queue: served after priority work, always taking a share of it, so it never stalls behind paid work |
 | `output_url`, `download_url` | The result, presigned. One to display, one to save |
 | `thumb_url` | A small JPEG of the result, for listings. Null when none was drawn |

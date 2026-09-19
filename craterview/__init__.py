@@ -23,7 +23,7 @@ from typing import Any, BinaryIO, Iterator
 
 import requests
 
-__all__ = ["CraterView", "Job", "CraterViewError", "RateLimited", "JobFailed",
+__all__ = ["CraterView", "Job", "Upload", "CraterViewError", "RateLimited", "JobFailed",
            "new_idempotency_key", "verify_webhook", "InvalidSignature",
            "SIGNATURE_HEADER", "TIMESTAMP_HEADER"]
 
@@ -446,10 +446,16 @@ class CraterView:
         return self._request("GET", "/v1/models")
 
     def upload(self, image: str | Path | bytes | BinaryIO,
-               content_type: str | None = None) -> str:
+               content_type: str | None = None) -> Upload:
         """Put an image in storage and return its key.
 
         Bytes go straight to object storage on a presigned URL, never through the API.
+
+        The key comes back as an `Upload`: a `str` you pass to `submit()` as before, that
+        also carries `megapixels` — the image's size, read from its header without decoding
+        it — so `submit()` can tell the API what you sent and `eta_seconds` is estimated
+        for your image rather than a typical one. `None` for a file the reader does not
+        know, which changes nothing but the estimate.
         """
         if isinstance(image, (str, Path)):
             path = Path(image)
@@ -470,12 +476,19 @@ class CraterView:
         put = requests.put(slot["upload_url"], data=data,
                            headers={"Content-Type": content_type}, timeout=300)
         put.raise_for_status()
-        return slot["input_key"]
+        return Upload(slot["input_key"], megapixels=_megapixels(data))
 
     def submit(self, model: str, input_key: str, *, wait: float = 0,
                idempotency_key: str | None = None, webhook_url: str | None = None,
-               custom_id: str | None = None, **params) -> Job:
+               custom_id: str | None = None, input_megapixels: float | None = None,
+               **params) -> Job:
         """Queue a job. `wait` holds the response open for a settled result.
+
+        `input_megapixels` tells the API how big the input is (width × height ÷ 1,000,000),
+        so `eta_seconds` is estimated for your image rather than a typical one. It changes
+        nothing else — not the price, the queue or whether the job is accepted, which all
+        read the file itself. Left unset, the size `upload()` read from the file is sent when
+        `input_key` is the `Upload` it returned; pass a figure to override or supply one.
 
         Pass `idempotency_key` — see `new_idempotency_key` — if you intend to retry this
         submission. Without one, a repeat after a failed or uncertain request starts a
@@ -495,6 +508,10 @@ class CraterView:
             body["webhook_url"] = webhook_url
         if custom_id:
             body["custom_id"] = custom_id
+        if input_megapixels is None and isinstance(input_key, Upload):
+            input_megapixels = input_key.megapixels
+        if input_megapixels is not None and input_megapixels > 0:
+            body["input_megapixels"] = float(input_megapixels)
         payload = self._request("POST", f"/v1/jobs?wait={wait}", json=body, headers=headers)
         return Job._from(payload, self)
 
@@ -619,6 +636,41 @@ class CraterView:
         if raise_on_failure and not job.succeeded:
             raise JobFailed(job.error or "job failed", job.error_code)
         return job
+
+
+class Upload(str):
+    """The key of an uploaded file — a plain `str` for `submit()` — with what the client
+    learned about the file before sending it: `megapixels`, or `None` when it could not
+    tell. Comparing, hashing and printing it behave as the key alone."""
+
+    megapixels: float | None
+
+    def __new__(cls, key: str, megapixels: float | None = None) -> "Upload":
+        made = super().__new__(cls, key)
+        made.megapixels = megapixels
+        return made
+
+
+def _megapixels(data: bytes) -> float | None:
+    """Width × height ÷ 10⁶ from the file's header, or None for a file the readers do not
+    know. Opening is lazy — nothing is decoded — and nothing here may fail an upload: a
+    size the client cannot read is simply not declared."""
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+
+        try:
+            from pi_heif import register_heif_opener
+
+            register_heif_opener()
+        except ImportError:
+            pass
+        with Image.open(BytesIO(data)) as im:
+            width, height = im.size
+        return round(width * height / 1e6, 4) or None
+    except Exception:  # noqa: BLE001 - a size the client cannot read is not declared
+        return None
 
 
 def _guess_type(path: Path) -> str:

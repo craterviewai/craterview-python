@@ -159,6 +159,12 @@ with `model`, `input_key` and `params` (add `?wait=25` to hold the response for 
 result), and `GET /v1/jobs/{id}`. Image bytes never pass through the API — uploads go to
 storage on a presigned URL and results come back the same way.
 
+The clients also send `input_megapixels` — the file's width × height ÷ 1,000,000, read from
+its header — beside `params`, so `eta_seconds` is estimated for that file from the moment
+it is queued rather than for a typical one. Over raw HTTP add it yourself when the size is
+known. It is optional and changes only the estimate: the price, the queue and the size
+limits are decided from the file itself.
+
 ## Over HTTP, from a shell
 
 For a shell script, a CI step, a language the clients do not cover, or reproducing a
@@ -218,7 +224,9 @@ specification at https://api.craterview.ai/openapi.json, not in this page.
 - `failed`: `error` is a sentence the user can act on; `error_code` is the stable identifier
   to branch on. A failed job is not charged.
 - `credits` is what the job was billed. `eta_seconds`, present until the job settles, covers
-  the whole wait, queue included. `community` is true when the job is on the community queue.
+  the whole wait, queue included; it is a ceiling — quoted for the slowest card that might
+  take the job, then re-estimated from the worker that has it — so finishing early is the
+  normal case. `community` is true when the job is on the community queue.
 
 ## Retries: the client does not, so the caller must do it right
 

@@ -1,6 +1,6 @@
 [project]
 name = "craterview"
-version = "0.3.12"
+version = "0.3.13"
 description = "Python client for the CraterView image enhancement API"
 readme = "README.md"
 license = "Apache-2.0"
@@ -11,7 +11,11 @@ requires-python = ">=3.9"
 # Raising it makes every consumer upgrade, so it moves when the code needs something newer.
 # `.python-version` beside this file is 3.9 — the oldest interpreter the package claims, so a
 # proposed change is checked against the whole supported range rather than the newest.
-dependencies = ["requests>=2.31"]
+# Pillow and pi-heif read an image's dimensions from its header before it is uploaded — no
+# decoding — so the API can estimate a wait for the image you sent rather than a typical one.
+# pi-heif rather than pillow-heif: it is the same reader without an encoder this client would
+# never use, and it is what lets an iPhone still declare its size.
+dependencies = ["requests>=2.31", "pillow>=10.0", "pi-heif>=0.16"]
 keywords = ["upscaling", "super-resolution", "image-restoration", "api-client"]
 # No `License ::` classifier: PEP 639 deprecates it in favor of the SPDX expression above,
 # and setuptools rejects a build that carries both.
