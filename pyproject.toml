@@ -1,6 +1,6 @@
 [project]
 name = "craterview"
-version = "0.3.7"
+version = "0.3.8"
 description = "Python client for the CraterView image enhancement API"
 readme = "README.md"
 license = "Apache-2.0"
