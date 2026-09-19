@@ -89,11 +89,11 @@ class RateLimited(CraterViewError):
     One is the key's request rate. The other is the account's cap on jobs queued or
     running at the same time, which exists so one caller cannot occupy the whole fleet.
 
-    `retry_after` is seconds to wait, and how good a number it is depends on which limit
-    you hit: exact for the rate limit, where it is when the window rolls over, and a hint
-    for the in-flight cap, where a slot frees when one of your own jobs finishes and the
-    server can only quote the model's typical duration. `usage()` reports the cap and what
-    you currently hold against it.
+    `retry_after` is seconds to wait, and what it means depends on which limit you hit:
+    for the rate limit it is when the window rolls over; for the in-flight cap it is a
+    fixed short interval to poll on, since a slot frees when one of your own jobs finishes
+    and nothing here predicts that. `usage()` reports the cap and what you currently hold
+    against it.
     """
 
     def __init__(self, message: str, retry_after: float | None = None):
@@ -251,11 +251,12 @@ class Job:
     than the output — so `input_url` is null for most of a job's life and code that reads
     it should expect nothing there.
 
-    `community` says the job was submitted against a balance of zero and is on the queue
-    served after priority work, which always takes a share of it rather than only what is
-    left over — so it waits longer at busy times and never stalls behind paid work. Nothing is refused for want of credit — credit buys a place at the front of the
-    queue, not the right to submit — so an empty balance means a longer wait and never an
-    error.
+    `community` says the job was submitted by an account that was not paying — no credit
+    and no subscription — and is on the queue served after priority work, which always
+    takes a share of it rather than only what is left over: it waits longer at busy times
+    and never stalls behind paid work. Nothing is refused for want of payment — paying buys
+    a place at the front of the queue, not the right to submit — so an empty balance means
+    a longer wait and never an error.
     """
 
     id: str
@@ -416,21 +417,19 @@ class CraterView:
     # ---------------------------------------------------------------------- public
 
     def models(self) -> list[dict]:
-        """Available models: parameter schemas, prices, limits, and your queue.
+        """Available models: parameter schemas, prices, limits, and which queue you are on.
 
         Prices are published here, so the cost of a job is knowable before submitting it.
 
-        Needs a key, and not only because the figures are live: `queue_depth` and
-        `community` are answered *for the queue your key would use*. The API looks up the
-        account and reports the queue a job from this key would land in — an account that
-        has paid for priority, by holding credit or by subscribing, gets the priority queue,
-        and one that has not gets the community queue, which is served after priority work
-        and always takes a share of it. So two keys asking at the same moment can get
-        different numbers, and paying changes yours.
+        `community` and the limits are answered *for the queue your key would use*. The API
+        looks up the account and reports the queue a job from this key would land in — an
+        account that has paid for priority, by holding credit or by subscribing, gets the
+        priority queue, and one that has not gets the community queue, which is served after
+        priority work and always takes a share of it. So two keys asking at the same moment
+        can get different answers, and paying changes yours.
 
-        `community` here means what `Job.community` means on a submitted job, and
-        `queue_depth` is how much work is ahead of you on that queue before you submit —
-        the counterpart to `Job.eta_seconds` once you have.
+        `community` here means what `Job.community` means on a submitted job. How long a
+        wait will be is answered on the job, once you have one — `Job.eta_seconds`.
 
         A model that is available is not always listed — a model in trial, or being
         retired, stays usable by name while absent from this catalog.

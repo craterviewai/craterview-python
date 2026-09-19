@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Enhance or restore one image with CraterView, from the command line.
 
+    python enhance.py photo.jpg --model echo --scale 2            # free: proves the key and the plumbing
     python enhance.py photo.jpg --scale 4 -o photo-4x.png
     python enhance.py scan.jpg --model cv-restore-v1 --param mode=full --param monochrome=true
     python enhance.py photo.jpg --model cv-content-check-v1        # prints the result, no file
 
-Needs `pip install craterview` and CRATERVIEW_API_KEY in the environment. The key is read
+Needs `pip install craterview` and CV_API_KEY in the environment. The key is read
 from there and nowhere else, on purpose: a key on a command line ends up in shell history.
 
 Exit status is 0 on success, 1 for anything the API refused or the job failed on, and the
@@ -52,9 +53,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="seconds to wait for the job in total (default: %(default)s)")
     args = parser.parse_args(argv)
 
-    key = os.environ.get("CRATERVIEW_API_KEY")
+    key = os.environ.get("CV_API_KEY")
     if not key:
-        return _fail("CRATERVIEW_API_KEY is not set. Sign in at https://craterview.ai, open the "
+        return _fail("CV_API_KEY is not set. Sign in at https://craterview.ai, open the "
                      "dashboard's Developer API panel, Show my API key, and export it.")
     if not args.image.is_file():
         return _fail(f"{args.image} is not a file")

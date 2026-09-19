@@ -17,11 +17,12 @@ npm install craterview          # TypeScript source, zero dependencies
 
 ## Getting an API key
 
-Every `/v1` route needs a key, so this comes before any code that calls one. **Check for a
+Every `/v1` route but the model catalogue needs a key, so this comes before any code that
+calls one. **Check for a
 key first**, and do not write or run anything against the API until there is one:
 
 ```bash
-test -n "$CRATERVIEW_API_KEY" && echo "a key is set" || echo "no key"
+test -n "$CV_API_KEY" && echo "a key is set" || echo "no key"
 ```
 
 If it is not set, walk the user through getting one rather than guessing, stubbing it, or
@@ -38,7 +39,7 @@ writing code that will fail at the first call. Keys begin with `cv_`.
    here:
 
    ```bash
-   export CRATERVIEW_API_KEY=cv_...
+   export CV_API_KEY=cv_...
    ```
 
    Offer to add that line to their shell profile if they want it to persist. If the key
@@ -53,11 +54,11 @@ a pasted key into a file, a commit, or a code example.
 Then read it from the environment and never inline it:
 
 ```python
-cv = CraterView(api_key=os.environ["CRATERVIEW_API_KEY"])
+cv = CraterView(api_key=os.environ["CV_API_KEY"])
 ```
 
 ```ts
-const cv = new CraterView({ apiKey: process.env.CRATERVIEW_API_KEY });
+const cv = new CraterView({ apiKey: process.env.CV_API_KEY });
 ```
 
 A key carries the account's whole allowance and does not expire, so it belongs server-side:
@@ -77,7 +78,7 @@ paid work, so they wait longer rather than being refused. Credits buy priority, 
 ```python
 from craterview import CraterView
 
-cv = CraterView(api_key=os.environ["CRATERVIEW_API_KEY"])
+cv = CraterView(api_key=os.environ["CV_API_KEY"])
 job = cv.run("photo.jpg", model="cv-enhance-v3", scale=4)
 job.save("photo-4x.png")
 ```
@@ -85,7 +86,7 @@ job.save("photo-4x.png")
 ```ts
 import { CraterView } from "craterview";
 
-const cv = new CraterView({ apiKey: process.env.CRATERVIEW_API_KEY });
+const cv = new CraterView({ apiKey: process.env.CV_API_KEY });
 const job = await cv.run(blob, { model: "cv-enhance-v3", scale: 4 });
 const out = await job.blob();
 ```
@@ -94,15 +95,29 @@ const out = await job.blob();
 `JobFailed` if the job did not succeed. Model parameters pass straight through as keyword
 arguments (Python) or option fields (TypeScript).
 
+**Build against `echo` first.** It is a free model, callable by name though absent from the
+catalogue: it costs no credits, needs no GPU, and returns a real result of the right shape
+— a plain enlargement — so the request, the parameters and the response are exactly what a
+paid model gives. Write and test the integration against it, then switch the one string:
+
+```python
+job = cv.run("photo.jpg", model="echo", scale=2)     # free; swap in cv-enhance-v3 when it works
+```
+
+It takes `scale` 1–4 like the enhancing model, and a `credits` parameter (0 or 1) that opts
+one job into spending a single credit, for exercising billing without a paid model. Run it
+while the user is still getting things wrong; run the paid model once they are not.
+
 `scripts/enhance.py` beside this file is the same thing as a command, for running rather
 than writing:
 
 ```bash
+python scripts/enhance.py photo.jpg --model echo --scale 2       # free: proves the key and the plumbing
 python scripts/enhance.py photo.jpg --scale 4 -o photo-4x.png
 python scripts/enhance.py scan.jpg --model cv-restore-v1 --param mode=full --param monochrome=true
 ```
 
-It needs `pip install craterview` and `CRATERVIEW_API_KEY` in the environment.
+It needs `pip install craterview` and `CV_API_KEY` in the environment.
 
 ## Choosing the model
 
@@ -115,8 +130,9 @@ skill was written.
 | --- | --- | --- |
 | Sharper, larger, less noise, fewer compression artifacts — a soft scan, a small or cropped photo, a screenshot | `cv-enhance-v3` | `scale` 1–4 (default 4) |
 | A damaged print repaired — tears, creases, scratches, dust, faded colour | `cv-restore-v1` | `mode` `full` or `spots` (spots repairs dust and hairline scratches only and keeps every other pixel); `monochrome` for a black-and-white print; `size` `standard` (about one megapixel) or `large` (2048 px long side, several times slower); `seed` |
-| A photograph with a face turned into a professional headshot | `cv-headshot-v1` | `seed` |
+| A photograph with a face turned into a professional headshot | `cv-headshot-v1` | `attire` `business` (a dark jacket over a plain shirt) or `as-is` (keeps what they are wearing); `seed` |
 | An image screened against the content policy, unchanged | `cv-content-check-v1` | none; free; the answer is in `result` and there is no output file |
+| The plumbing proved before anything is spent — the first call, a new integration, a test suite | `echo` | `scale` 1–4; free; a plain enlargement of the right shape; `credits` 0 or 1 opts one job into a charge to test billing. Not in the catalogue; callable by name |
 
 All image models also take `output_format` (`auto`, `png`, `jpeg`, `webp`; `auto` returns
 the format sent, except that HEIC/HEIF comes back as JPEG) and `quality` (96–100, for jpeg
@@ -143,13 +159,62 @@ with `model`, `input_key` and `params` (add `?wait=25` to hold the response for 
 result), and `GET /v1/jobs/{id}`. Image bytes never pass through the API — uploads go to
 storage on a presigned URL and results come back the same way.
 
+## Over HTTP, from a shell
+
+For a shell script, a CI step, a language the clients do not cover, or reproducing a
+problem with nothing in the way. The same three calls, with `CV_API_KEY` in the environment
+and `jq` for the fields the next step needs:
+
+```bash
+# 1 — ask for somewhere to put the file. content_length is required and is signed into
+#     the URL that comes back, as is the content type.
+LEN=$(wc -c < photo.jpg)
+SLOT=$(curl -sS -X POST "https://api.craterview.ai/v1/uploads" \
+  -H "Authorization: Bearer $CV_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "{\"content_type\": \"image/jpeg\", \"content_length\": $LEN}")
+UPLOAD_URL=$(echo "$SLOT" | jq -r .upload_url)
+INPUT_KEY=$(echo "$SLOT" | jq -r .input_key)
+
+# 2 — upload the bytes to storage, not to the API. The content type must be the one
+#     declared above: it is part of the signature, and a mismatch is refused by storage.
+curl -sS -f -X PUT "$UPLOAD_URL" \
+  -H "Content-Type: image/jpeg" \
+  --data-binary @photo.jpg
+
+# 3 — submit. ?wait=25 holds the response open so a fast job comes back finished;
+#     a slower one comes back queued or running with an id to read.
+JOB=$(curl -sS -X POST "https://api.craterview.ai/v1/jobs?wait=25" \
+  -H "Authorization: Bearer $CV_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "{\"model\": \"cv-enhance-v3\", \"input_key\": \"$INPUT_KEY\", \"params\": {\"scale\": 4}}")
+JOB_ID=$(echo "$JOB" | jq -r .id)
+
+# 4 — read until settled, then fetch the result from the link the job carries.
+until [ "$(echo "$JOB" | jq -r .status)" = succeeded ] || [ "$(echo "$JOB" | jq -r .status)" = failed ]; do
+  sleep 2
+  JOB=$(curl -sS "https://api.craterview.ai/v1/jobs/$JOB_ID" -H "Authorization: Bearer $CV_API_KEY")
+done
+echo "$JOB" | jq -r '.status, .error // empty'
+curl -sS -f -o photo-enhanced.jpg "$(echo "$JOB" | jq -r .result.output.download_url)"
+```
+
+What goes wrong here, in order of how often: `-d` without the JSON `Content-Type` header
+arrives form-encoded and is refused; a PUT whose `Content-Type` differs from the declared
+one is refused by storage, with an error that does not mention CraterView; `wait` above 30
+is a 422 rather than a longer wait; and the result links expire, so fetch the file rather
+than keeping the URL. Everything else — parameters per model, prices, limits — is in the
+specification at https://api.craterview.ai/openapi.json, not in this page.
+
 ## Reading a job
 
 `status` is `queued`, `running`, `succeeded` or `failed`.
 
-- `succeeded`: `output_url` renders in a page, `download_url` saves under a filename. **Both
-  are presigned and expire** — fetch the bytes rather than storing the link; a fresh read of
-  the job mints fresh links. `thumb_url` is a small preview for listings.
+- `succeeded`: `result.output.url` renders in a page, `result.output.download_url` saves
+  under a filename. **Both are presigned and expire** — fetch the bytes rather than storing
+  the link; a fresh read of the job mints fresh links. `result.output.thumbnail_url` is a
+  small preview for listings. (The Python client exposes the same three as `output_url`,
+  `download_url` and `thumb_url` on a `Job`.)
 - `failed`: `error` is a sentence the user can act on; `error_code` is the stable identifier
   to branch on. A failed job is not charged.
 - `credits` is what the job was billed. `eta_seconds`, present until the job settles, covers
