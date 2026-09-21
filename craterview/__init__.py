@@ -294,6 +294,14 @@ class Job:
     # Whether this result is retained past the ordinary expiry, because its owner asked.
     # A kept result also keeps working links.
     kept: bool = False
+    # Whether the kept copy includes the image you sent as well as the result. It does when
+    # you kept the job while the original was still there; False when only the result is
+    # kept, and when nothing is.
+    kept_original: bool = False
+    # Where this job stands with the public gallery, when you have offered it:
+    # `{"status": "pending" | "approved", "post_id": ...}` while it is being reviewed or
+    # shown, None when it is not offered — including after you withdraw it.
+    gallery: dict | None = None
     _client: "CraterView | None" = None
 
     @property
