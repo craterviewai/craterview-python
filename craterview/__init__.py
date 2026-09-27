@@ -3,7 +3,7 @@
     from craterview import CraterView
 
     cv = CraterView(api_key="cv_...")
-    result = cv.run("photo.jpg", style="photo")
+    result = cv.run("photo.jpg", scale=4)
     result.save("photo-4x.jpg")
 
 The three-call upload/submit/poll dance is the API's shape, not something a caller should
@@ -84,16 +84,22 @@ class CraterViewError(RuntimeError):
 
 
 class RateLimited(CraterViewError):
-    """429 — too fast, or too much at once. Two different limits answer with this.
+    """429 — too fast, or too much at once. Four different limits answer with this, and
+    the message says which.
 
-    One is the key's request rate. The other is the account's cap on jobs queued or
-    running at the same time, which exists so one caller cannot occupy the whole fleet.
+    - The key's request rate, per minute.
+    - The account's upload URLs, per minute — counted across all its keys.
+    - The account's cap on jobs queued or running at the same time, which exists so one
+      caller cannot occupy the whole fleet. `usage()` reports the cap and what you
+      currently hold against it.
+    - The queue itself, when it is full and taking no more work. Nothing you sent is
+      wrong; an account with credit or a subscription submits on a queue that fills
+      separately.
 
     `retry_after` is seconds to wait, and what it means depends on which limit you hit:
-    for the rate limit it is when the window rolls over; for the in-flight cap it is a
-    fixed short interval to poll on, since a slot frees when one of your own jobs finishes
-    and nothing here predicts that. `usage()` reports the cap and what you currently hold
-    against it.
+    for the two per-minute limits it is when the window rolls over; for the in-flight cap
+    and the full queue it is an interval to poll on, since nothing here predicts when a
+    slot frees.
     """
 
     def __init__(self, message: str, retry_after: float | None = None):
@@ -106,7 +112,7 @@ class JobFailed(CraterViewError):
 
     `error` says what the caller can do about it and `error_code` is the half to branch on,
     because the prose is written for a person and gets reworded. `inference_failed` means the
-    fault was ours, the credits were refunded, and the same call is worth making again.
+    fault was ours, nothing was charged, and the same call is worth making again.
 
     An unfamiliar code is a failure with no special handling, not an error in itself: new ones
     appear as new things become worth telling apart.
@@ -245,11 +251,12 @@ class Job:
     a promise — read it as guidance, not a deadline. Absent once a job has settled.
 
     `thumb_url` is a small JPEG of the result, for showing a page of jobs without
-    downloading a page of full-size outputs. `input_url` is the file you sent, so a result
-    can be shown against what it was made from. The two expire on very different clocks:
-    the preview goes with the result, while inputs are deleted after a day — much sooner
-    than the output — so `input_url` is null for most of a job's life and code that reads
-    it should expect nothing there.
+    downloading a page of full-size outputs. `input_url` is the picture the model worked
+    from, so a result can be shown against it — and where you named a region, it is that
+    region, so what was used is something you can look at rather than something to take on
+    trust. It is not the file you uploaded: yours stays yours and is removed on its own
+    schedule. Both expire with the result. `alpha_url` is there only when you asked for a JPEG
+    of a picture with transparency: the transparency, as a file of its own.
 
     `community` says the job was submitted by an account that was not paying — no credit
     and no subscription — and is on the queue served after priority work, which always
@@ -282,7 +289,6 @@ class Job:
     # it is a client library's job — `job.output_url` is nicer than reaching into a dict, and
     # it is how every example in this file is written.
     result: dict | None = None
-    input_url: str | None = None
     # Whole credits. A credit is not divisible, and a partial video second rounds up at the
     # charge rather than arriving as a fraction.
     credits: int | None = None
@@ -294,10 +300,6 @@ class Job:
     # Whether this result is retained past the ordinary expiry, because its owner asked.
     # A kept result also keeps working links.
     kept: bool = False
-    # Whether the kept copy includes the image you sent as well as the result. It does when
-    # you kept the job while the original was still there; False when only the result is
-    # kept, and when nothing is.
-    kept_original: bool = False
     # Where this job stands with the public gallery, when you have offered it:
     # `{"status": "pending" | "approved", "post_id": ...}` while it is being reviewed or
     # shown, None when it is not offered — including after you withdraw it.
@@ -334,6 +336,29 @@ class Job:
         """A small JPEG of the result, for showing a page of jobs without downloading a page
         of full-size outputs. Absent where the worker could not draw one."""
         return self._output.get("thumbnail_url")
+
+    @property
+    def input_url(self) -> str | None:
+        """The picture the model worked from, which is the region where you named one.
+
+        Not the file you uploaded — that one is yours and goes on its own schedule. This is
+        what went into the model, so a before-and-after is a true pair. None for a job that
+        has not finished. A model that answers about a picture rather than producing one has
+        it too: it is the picture that answer is about.
+        """
+        given = (self.result or {}).get("input")
+        return given.get("url") if isinstance(given, dict) else None
+
+    @property
+    def alpha_url(self) -> str | None:
+        """The transparency of a result you asked for as JPEG, which cannot hold it.
+
+        A grayscale JPEG the size of the result: white where it is opaque, black where it is
+        transparent. The result itself is then the colour alone, not placed on any
+        background, so the two together are the picture. None for every other result.
+        """
+        mask = (self.result or {}).get("alpha")
+        return mask.get("url") if isinstance(mask, dict) else None
 
     @property
     def output_content_type(self) -> str | None:
@@ -559,9 +584,8 @@ class CraterView:
         """The account's credit balance, what it has spent, and what is in flight.
 
         All-time, not monthly: credits are granted and deplete rather than renewing.
-        Counts committed work rather than completed, so a queued job is already in the
-        figures — otherwise this and the balance a submission is checked against would
-        disagree.
+        A job is charged when it succeeds, so queued and running work is not in the
+        figures yet, and a failed job costs nothing.
 
         `credits_remaining` is always a number, floored at zero. `jobs_in_flight` and
         `max_jobs_in_flight` are the state of the queue and are what a 429 on submit is

@@ -1,6 +1,6 @@
 {
   "name": "craterview",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Enhance, enlarge and restore photographs through CraterView's hosted tools. Installing this connects the server; the skill says which tool to reach for and what a result means.",
   "author": {
     "name": "CraterView",
