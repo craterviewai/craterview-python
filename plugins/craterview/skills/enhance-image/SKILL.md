@@ -12,7 +12,7 @@ The server exposes two tools:
   call and return `output_url` set.
 - `get_job` — collect a job that `enhance_image` returned as `queued` or `running`.
 
-Stills only. Video is not yet in service.
+The tool sends still images. What it accepts, and how large, is in its own description.
 
 ## Before the first call: connect the account
 
@@ -43,20 +43,24 @@ assistant linked to the account. The `craterview-api` plugin is the skill for th
 
 ## Choosing the model
 
-`enhance_image` takes a `model`. The catalog the API serves is authoritative; this is what
-was in service when this skill was written.
+`enhance_image` takes a `model` and a `params` object. **Both are read from CraterView's
+catalog each time the server is used**, so the tool's own description is the current list:
+every model it offers, what each is for, and every setting each one takes with its range and
+default. Read it there rather than from memory; models and settings are added without this
+skill changing.
 
-| The user wants | Model | Notes |
-| --- | --- | --- |
-| Sharper, larger, less noisy, fewer compression artifacts — a soft scan, a small or cropped photo, a screenshot | `cv-enhance-v3` (default) | `scale` 1–4, default 4. Use a smaller factor when the source is already large or only detail is wanted. |
-| A damaged print repaired — tears, creases, scratches, dust, faded colour | `cv-restore-v1` | Returns about one megapixel whatever was sent: it repairs, it does not enlarge. Takes no `scale`. It rebuilds a face as a close likeness rather than the original pixels, so tell the user to keep the source. |
-
-Ask before you guess when the request is ambiguous: "sharpen this old photo" is an
-enhancement if the print is intact and a restoration if it is torn or stained. Enlarging a
-damaged print sharpens the damage.
-
-Each model refuses a parameter it does not publish, so send only what the chosen model
-declares — a `scale` on `cv-restore-v1` is an error, not a no-op.
+- Match the request to what each model says it is for. When the request is ambiguous, ask
+  before you guess: "sharpen this old photo" is an enhancement if the print is intact and a
+  repair if it is torn or stained, and enlarging a damaged print sharpens the damage.
+- **Send only the settings the user asked for.** Each has a default, and each model refuses a
+  setting it does not take — the tool says which models take each one.
+- **Leave an enlargement factor out** unless the user named one. A model that enlarges bounds
+  the size of what it returns, so the largest factor a picture can have depends on how large
+  it is, and omitting it takes the largest that fits. A factor too large for the picture is
+  refused rather than quietly reduced; naming a region of the picture is how its subject gets
+  the full factor.
+- If a model's description warns about something — a face rebuilt as a likeness rather than
+  the original pixels, say — pass that on to the user before they rely on the result.
 
 ## Handing over the image
 
@@ -77,10 +81,17 @@ Every result is a link, never the bytes.
   job's name. **Both are presigned and expire.** Give the user the link now, or fetch the
   image if it is wanted for something further; do not store the URL as if it were permanent.
   `get_job` mints fresh links.
-- `status: queued` or `running` — the job is still going. Call `get_job` with the `job_id`
-  after a few seconds. **Do not call `enhance_image` again**: that runs and charges the work
-  twice. A large image takes tens of seconds; a tight loop only spends the account's rate
-  limit.
+- `status: queued` or `running` — the job is still going. `eta_seconds` is the platform's
+  estimate of the time left, and the note says it in words: tell the user how long to expect.
+  Then call `get_job` with the `job_id`. It waits for the job before it answers, so if it
+  answers that the job is still going, call it again straight away; there is no need to pause
+  between calls. Each answer carries the current estimate. **Do not call
+  `enhance_image` again**: that runs and charges the work twice.
+- `scale` — the enlargement factor the job was sent. When you left it out, `scale_note` says
+  so and how the one used was chosen: the largest factor whose result fits the account's size
+  limit for that model. Tell the user which factor was used. At 1× the picture keeps its size
+  and has its detail rebuilt; if they wanted it larger, name a region of the picture (`roi`),
+  which is what comes back enlarged.
 - `status: failed` — `error` says what happened in words the user can act on. A failed job
   is not charged.
 

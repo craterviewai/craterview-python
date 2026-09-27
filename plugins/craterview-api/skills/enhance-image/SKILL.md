@@ -12,7 +12,7 @@ complete; anything this file does not cover is there. Two official clients wrap 
 
 ```bash
 pip install craterview          # Python 3.9+, one dependency
-npm install craterview          # TypeScript source, zero dependencies
+npm install craterview          # TypeScript source, one dependency — not loadable by plain node
 ```
 
 ## Getting an API key
@@ -95,6 +95,12 @@ const out = await job.blob();
 `JobFailed` if the job did not succeed. Model parameters pass straight through as keyword
 arguments (Python) or option fields (TypeScript).
 
+**The TypeScript client is shipped as `.ts` source, and `node` alone will not load it** —
+not with type stripping either, which Node never applies under `node_modules`. Run a script
+with `npx tsx script.ts`, or bundle it first (`npx esbuild script.js --bundle
+--platform=node --format=esm --outfile=out.mjs`, then `node out.mjs`). A project that
+already compiles or bundles its TypeScript needs nothing extra.
+
 **Build against `echo` first.** It is a free model, callable by name though absent from the
 catalogue: it costs no credits, needs no GPU, and returns a real result of the right shape
 — a plain enlargement — so the request, the parameters and the response are exactly what a
@@ -130,13 +136,19 @@ skill was written.
 | --- | --- | --- |
 | Sharper, larger, less noise, fewer compression artifacts — a soft scan, a small or cropped photo, a screenshot | `cv-enhance-v3` | `scale` 1–4 (default 4) |
 | A damaged print repaired — tears, creases, scratches, dust, faded colour | `cv-restore-v1` | `mode` `full` or `spots` (spots repairs dust and hairline scratches only and keeps every other pixel); `monochrome` for a black-and-white print; `size` `standard` (about one megapixel) or `large` (2048 px long side, several times slower); `seed` |
-| A photograph with a face turned into a professional headshot | `cv-headshot-v1` | `attire` `business` (a dark jacket over a plain shirt) or `as-is` (keeps what they are wearing); `seed` |
-| An image screened against the content policy, unchanged | `cv-content-check-v1` | none; free; the answer is in `result` and there is no output file |
+| A photograph with a face turned into a professional headshot | `cv-headshot-v1` | `attire` `business` (a dark jacket over a plain shirt), `as-is` (keeps what they are wearing) or `starship-captain` (a starship uniform on a starship's bridge, with pointed ears); `seed` |
+| An image screened against the content policy, unchanged | `cv-content-check-v1` | none; free; `result` carries `verdict` (`passed` or `flagged`); there is no output file |
+| To know whether an image was generated rather than captured, unchanged | `cv-real-check-v1` | none; free; `result` carries `verdict` (`generated`, `real` or `uncertain` — an estimate; do not act on `uncertain` either way) and `generated_probability` (0–1); there is no output file. An estimate, not a certificate: newer generators are detected less reliably than older ones |
 | The plumbing proved before anything is spent — the first call, a new integration, a test suite | `echo` | `scale` 1–4; free; a plain enlargement of the right shape; `credits` 0 or 1 opts one job into a charge to test billing. Not in the catalogue; callable by name |
 
 All image models also take `output_format` (`auto`, `png`, `jpeg`, `webp`; `auto` returns
-the format sent, except that HEIC/HEIF comes back as JPEG) and `quality` (96–100, for jpeg
-and webp).
+the format sent, except that HEIC/HEIF comes back as JPEG, or as PNG if it has
+transparency) and `quality` (96–100, for jpeg and webp). A picture with transparency asked
+for as `jpeg` comes back as two files, because JPEG cannot hold it: the colour as the
+result, and the transparency as a grayscale JPEG under `result.alpha`. Bit depth and colour
+are returned as they were sent, so a 16-bit PNG comes back 16-bit; JPEG and WebP hold 8 bits
+per channel and a deeper image returned as either comes back at 8. The catalogue is the authority on all of this — read it rather than relying on
+this paragraph.
 
 Each model refuses a parameter it does not publish — a `scale` sent to `cv-restore-v1` is a
 422, not a no-op. `cv-restore-v1` and `cv-headshot-v1` rebuild a face as a close likeness
@@ -164,6 +176,17 @@ its header — beside `params`, so `eta_seconds` is estimated for that file from
 it is queued rather than for a typical one. Over raw HTTP add it yourself when the size is
 known. It is optional and changes only the estimate: the price, the queue and the size
 limits are decided from the file itself.
+
+**A model that enlarges is bounded by the size of what it returns.** The result is the frame
+sent multiplied by the enlargement in each direction, so a picture that is fine unenlarged
+can be refused at a larger scale, with the code `result_too_large`. The catalog publishes
+that ceiling for the key in use; divide it by the square of the scale to get the largest
+frame that may be sent. There are three ways to stay inside it. Send a `roi` — `x`, `y`, `width`, `height` as
+fractions of the image you upload, origin top left — and the platform cuts that region
+before it works, so your file goes up exactly as it is; or cut the image yourself and upload
+the smaller one; or ask for less enlargement, which keeps the whole picture instead of part
+of it. The first two keep every pixel of the part that matters. Nothing is resized on the
+caller's behalf.
 
 ## Over HTTP, from a shell
 
