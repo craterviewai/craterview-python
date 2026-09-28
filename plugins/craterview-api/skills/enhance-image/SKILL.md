@@ -241,9 +241,10 @@ specification at https://api.craterview.ai/openapi.json, not in this page.
 
 - `succeeded`: `result.output.url` renders in a page, `result.output.download_url` saves
   under a filename. **Both are presigned and expire** — fetch the bytes rather than storing
-  the link; a fresh read of the job mints fresh links. `result.output.thumbnail_url` is a
-  small preview for listings. (The Python client exposes the same three as `output_url`,
-  `download_url` and `thumb_url` on a `Job`.)
+  the link; a fresh read of the job mints fresh links. `thumbnail_url`, on the job itself,
+  is a small preview for listings — of the result, or of the picture the model worked from
+  when it produced no file. (The Python client exposes the same three as `output_url`,
+  `download_url` and `thumbnail_url` on a `Job`.)
 - `failed`: `error` is a sentence the user can act on; `error_code` is the stable identifier
   to branch on. A failed job is not charged.
 - `credits` is what the job was billed. `eta_seconds`, present until the job settles, covers

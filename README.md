@@ -140,17 +140,18 @@ Every field the API publishes on a job is exposed here.
 | `eta_seconds` | Seconds until the job is expected to finish, recomputed on every read — it counts down while the job runs. Absent once the job has settled. Estimated for your image's size when `upload()` could read it — its header is read with Pillow, nothing is decoded — or when you pass `input_megapixels` to `submit()`; for a typical image otherwise |
 | `community` | True when the job is on the community queue: served after priority work, always taking a share of it, so it never stalls behind paid work |
 | `output_url`, `download_url` | The result, presigned. One to display, one to save |
-| `thumb_url` | A small JPEG of the result, for listings. Null when none was drawn |
+| `thumbnail_url` | A small JPEG of the job's picture, for listings — the result, or what the model worked from when it produced no file. Null when none was drawn |
 | `input_url` | The picture the model worked from — the region, where you named one |
 | `alpha_url` | Only for a JPEG result of a picture with transparency, which JPEG cannot hold: the transparency as a grayscale JPEG, white where opaque. The result is then the colour alone |
 | `output_content_type` | The result's media type |
 | `output_bytes` | The result's size in bytes |
 | `bytes()`, `save(path)` | Download the result |
 
-`result` is the whole of what the job produced, and the five rows above it that describe the
-file are accessors onto `result["output"]` rather than separate fields — the API states those
-links once. A model with no file to hand back returns its answer in `result` and leaves every
-one of them null; the fields it answers with are its `result_schema` in `cv.models()`.
+`result` is the whole of what the job produced, and the rows above it that describe the
+result's file are accessors onto `result["output"]` rather than separate fields — the API
+states those links once. A model with no file to hand back returns its answer in `result` and
+leaves every one of them null; the fields it answers with are its `result_schema` in
+`cv.models()`.
 
 `credits` is the only figure about cost the API states, and the price is fixed and published
 per model, so an invoice reconciles against `credits` alone. For how long a job took, subtract
@@ -174,13 +175,13 @@ reports a longer one.
 disposition is signed in, so the second cannot be derived from the first. Both expire, so
 fetch the result rather than storing the link.
 
-`thumb_url` and `input_url` are for building a job listing: a few-hundred-pixel preview so a
-page of results costs kilobytes, and the picture the model worked from so a result can be
+`thumbnail_url` and `input_url` are for building a job listing: a few-hundred-pixel preview so a
+page of jobs costs kilobytes, and the picture the model worked from so a result can be
 shown against it. Where you named a region, `input_url` is that region — so a before-and-after
 is a true pair, and what was used is something you can look at rather than something to take
 on trust. It is not the file you uploaded: yours stays yours and is removed on its own
-schedule. Both expire with the result. A model that produces no file has no `thumb_url`, but still
-has the picture it answered about.
+schedule. Both expire with the job's other pictures. A model that produces no file has no
+result to preview, so `thumbnail_url` is a preview of the picture it answered about.
 
 ## Webhooks
 
