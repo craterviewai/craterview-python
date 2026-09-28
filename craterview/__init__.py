@@ -240,7 +240,7 @@ class Job:
     by the same names.
 
     `result` is the whole of what the job produced. Where the model wrote a file,
-    `result["output"]` carries its links, and `output_url` / `download_url` / `thumb_url` /
+    `result["output"]` carries its links, and `output_url` / `download_url` /
     `output_content_type` / `output_bytes` are accessors onto that — the same object signed
     two ways, one to display and one to hand a person as a file. The disposition is signed
     in, so the second cannot be derived from the first without the storage credential. Both
@@ -250,13 +250,14 @@ class Job:
     counting time spent waiting for a GPU as well as time spent on one. An estimate and never
     a promise — read it as guidance, not a deadline. Absent once a job has settled.
 
-    `thumb_url` is a small JPEG of the result, for showing a page of jobs without
-    downloading a page of full-size outputs. `input_url` is the picture the model worked
+    `thumbnail_url` is a small JPEG of the job's picture — the result, or the image the model
+    worked from when it produced no file — for showing a page of jobs without downloading a
+    page of full-size pictures. `input_url` is the picture the model worked
     from, so a result can be shown against it — and where you named a region, it is that
     region, so what was used is something you can look at rather than something to take on
     trust. It is not the file you uploaded: yours stays yours and is removed on its own
-    schedule. Both expire with the result. `alpha_url` is there only when you asked for a JPEG
-    of a picture with transparency: the transparency, as a file of its own.
+    schedule. Both expire with the job's other pictures. `alpha_url` is there only when you
+    asked for a JPEG of a picture with transparency: the transparency, as a file of its own.
 
     `community` says the job was submitted by an account that was not paying — no credit
     and no subscription — and is on the queue served after priority work, which always
@@ -284,11 +285,15 @@ class Job:
     # detector, say — return only the answer and no file at all, so read this rather than
     # assuming there is something to download.
     #
-    # `output_url` and the three beside it are **properties** below rather than fields: the
+    # `output_url` and the accessors beside it are **properties** below rather than fields: the
     # wire states each of those facts once, inside `result.output`, and reading them out of
     # it is a client library's job — `job.output_url` is nicer than reaching into a dict, and
     # it is how every example in this file is written.
     result: dict | None = None
+    # A small JPEG of the job's picture, for a listing: the result, or the image the model
+    # worked from when it produced no file. None until the job succeeds, where none could
+    # be drawn, and once the job's pictures are deleted.
+    thumbnail_url: str | None = None
     # Whole credits. A credit is not divisible, and a partial video second rounds up at the
     # charge rather than arriving as a fraction.
     credits: int | None = None
@@ -330,12 +335,6 @@ class Job:
         re-signing needs the storage credential, which is why the server sends both.
         """
         return self._output.get("download_url")
-
-    @property
-    def thumb_url(self) -> str | None:
-        """A small JPEG of the result, for showing a page of jobs without downloading a page
-        of full-size outputs. Absent where the worker could not draw one."""
-        return self._output.get("thumbnail_url")
 
     @property
     def input_url(self) -> str | None:
