@@ -7,7 +7,9 @@ restoration API.
 pip install craterview
 ```
 
-Python 3.9 or newer. `requests` is the only dependency.
+Python 3.9 or newer. Three dependencies: `requests` for the API, and Pillow with `pi-heif` to
+read an image's size from its header — nothing is decoded — so a job's wait can be estimated
+for the picture you actually send, HEIC included.
 
 ## Quickstart
 
@@ -108,6 +110,10 @@ for attempt in range(3):
         continue                           # same key, so at most one job is ever created
 ```
 
+The two it catches are `ConnectionFailed` and `TimedOut`, raised when a request got no
+answer; each is also the builtin the loop names. An answer from the API, even a refusal, is
+not a reason to send the request again.
+
 Generating a fresh key per attempt defeats the point entirely — the server has nothing to
 match against and every attempt starts its own job. Reusing a key with a *different* body
 is rejected with 409 rather than quietly handing back the earlier result. Claims are kept
@@ -117,13 +123,17 @@ the same job.
 ## Errors
 
 Everything raised by this client descends from `CraterViewError`, so one `except` catches
-the lot. `.status` carries the HTTP status where there was one.
+the lot. `.status` carries the HTTP status where there was one, and `.trace_id` the API's
+`X-Trace-Id` for a request it answered and refused — the id to quote when you ask us about
+it.
 
 | Exception | Meaning |
 |---|---|
-| `RateLimited` | 429 — one of four limits, and the message says which: the key's request rate, the account's upload URLs a minute, the account's jobs in flight, or a full queue. `.retry_after` is seconds to wait: until the window rolls over for the two per-minute limits, or an interval to poll on for the other two. |
+| `RateLimited` | 429 — one of five limits, and the message says which: the key's request rate, the account's upload URLs a minute, the account's new keys an hour, the account's jobs in flight, or a full queue. `.retry_after` is seconds to wait: until the window rolls over for the two per-minute limits, until a new key can be made for the hourly one, or an interval to poll on for the other two. |
 | `JobFailed` | The job ran and did not succeed. `.args[0]` says what you can do about it; `.error_code` is the half to branch on. |
-| `CraterViewError` | Everything else, including 4xx and 5xx from the API. |
+| `ConnectionFailed` | The request never reached the API or storage: refused, reset, or a name that would not resolve. Also a builtin `ConnectionError`. Safe to repeat with the same idempotency key. |
+| `TimedOut` | No answer within the client's `timeout`. Also a builtin `TimeoutError`. The request may have arrived, so repeat a submission with the same idempotency key, never a new one. |
+| `CraterViewError` | Everything else, including 4xx and 5xx from the API, and storage refusing an upload or a download. |
 
 ## `Job`
 
@@ -138,7 +148,7 @@ Every field the API publishes on a job is exposed here.
 | `error_code` | The same fact, as a stable identifier. Branch on this, show the other |
 | `credits` | **What you were billed** |
 | `eta_seconds` | Seconds until the job is expected to finish, recomputed on every read — it counts down while the job runs. Absent once the job has settled. Estimated for your image's size when `upload()` could read it — its header is read with Pillow, nothing is decoded — or when you pass `input_megapixels` to `submit()`; for a typical image otherwise |
-| `community` | True when the job is on the community queue: served after priority work, always taking a share of it, so it never stalls behind paid work |
+| `community` | True when the job is on the community queue, which runs on shared, free capacity and can wait longer at busy times |
 | `output_url`, `download_url` | The result, presigned. One to display, one to save |
 | `thumbnail_url` | A small JPEG of the job's picture, for listings — the result, or what the model worked from when it produced no file. Null when none was drawn |
 | `input_url` | The picture the model worked from — the region, where you named one |
@@ -163,11 +173,11 @@ exactly that length and nothing else. You do not pass it — it is read off the 
 which is what makes it impossible to get wrong.
 
 **Running out of credit does not stop you.** A job submitted against a balance of zero is
-accepted and run, and charged when it succeeds — it simply waits in the community queue, which is served after
-paid work and always takes a share of it, so it never stalls behind paid work. It comes back
-with `community` set. There is no payment error to handle:
-paying — with credit, or with a subscription — buys a place at the front of the queue rather
-than the right to submit.
+accepted and run, and charged when it succeeds — it goes to the community queue, which runs
+on shared, free capacity and can wait longer at busy times. It comes back with `community`
+set. There is no payment error to handle: paying — with credit, or with a subscription —
+moves work onto paid compute that scales with demand, rather than buying the right to
+submit.
 `eta_seconds` covers the whole wait, queue time included, so a community job simply
 reports a longer one.
 

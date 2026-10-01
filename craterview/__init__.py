@@ -24,7 +24,7 @@ from typing import Any, BinaryIO, Iterator
 import requests
 
 __all__ = ["CraterView", "Job", "Upload", "CraterViewError", "RateLimited", "JobFailed",
-           "new_idempotency_key", "verify_webhook", "InvalidSignature",
+           "ConnectionFailed", "TimedOut", "new_idempotency_key", "verify_webhook", "InvalidSignature",
            "SIGNATURE_HEADER", "TIMESTAMP_HEADER"]
 
 # `version` in pyproject.toml is the only place a release number is written; this reads it
@@ -62,6 +62,10 @@ def new_idempotency_key() -> str:
             except (ConnectionError, TimeoutError):
                 continue                      # same key, so at most one job is created
 
+    The two it catches are `ConnectionFailed` and `TimedOut`, this client's errors for a
+    request that never got an answer; each is also the builtin the loop names. Anything
+    else the API answered with — a refusal, a 409 — is not a reason to repeat the request.
+
     Generating a fresh key per attempt defeats the purpose entirely — the server has
     nothing to match against and each attempt starts its own job. That is the mistake this
     function exists to make harder, not easier: it is deliberately not called for you,
@@ -76,18 +80,62 @@ def new_idempotency_key() -> str:
 
 
 class CraterViewError(RuntimeError):
-    """Base class, so callers can catch everything from this client with one except."""
+    """Base class, so callers can catch everything from this client with one except.
 
-    def __init__(self, message: str, status: int | None = None):
+    `status` is the HTTP status where there was one. `trace_id` is the API's `X-Trace-Id` for
+    a request it answered and refused — the id to quote when asking about it. None when the
+    API never answered, or when the refusal came from storage.
+    """
+
+    def __init__(self, message: str, status: int | None = None,
+                 trace_id: str | None = None):
         super().__init__(message)
         self.status = status
+        self.trace_id = trace_id
+
+
+class ConnectionFailed(CraterViewError, ConnectionError):
+    """The request never reached the API or storage: refused, reset, or a name that would
+    not resolve. Also the builtin `ConnectionError`, so the retry loop in
+    `new_idempotency_key` catches it. Nothing was received, so repeating the request with
+    the same idempotency key is safe."""
+
+
+class TimedOut(CraterViewError, TimeoutError):
+    """No answer came within the client's `timeout`. Also the builtin `TimeoutError`.
+
+    The request may still have arrived and been acted on, which is exactly the case an
+    idempotency key exists for: repeat a submission with the same key and the API answers
+    with the job the first attempt created, if it created one, rather than a second.
+    """
+
+
+def _sent(call, *args, **kwargs) -> requests.Response:
+    """Every request this client makes, the API's and storage's, with the network's
+    failures raised as this client's errors rather than the transport library's.
+
+    One place, so no call can let a `requests` exception escape: the documented retry loop
+    catches the builtins these subclass, and a request made any other way would be a
+    request it silently cannot retry. A timeout is checked first, because a connect timeout
+    is both a timeout and a connection error, and the loop treats them alike anyway.
+    """
+    try:
+        return call(*args, **kwargs)
+    except requests.Timeout as failure:
+        raise TimedOut(str(failure)) from failure
+    except requests.ConnectionError as failure:
+        raise ConnectionFailed(str(failure)) from failure
+    except requests.RequestException as failure:
+        raise CraterViewError(str(failure)) from failure
 
 
 class RateLimited(CraterViewError):
-    """429 — too fast, or too much at once. Four different limits answer with this, and
+    """429 — too fast, or too much at once. Five different limits answer with this, and
     the message says which.
 
     - The key's request rate, per minute.
+    - The account's new keys, per hour — counted across all its keys, and only from
+      `create_key`.
     - The account's upload URLs, per minute — counted across all its keys.
     - The account's cap on jobs queued or running at the same time, which exists so one
       caller cannot occupy the whole fleet. `usage()` reports the cap and what you
@@ -97,13 +145,14 @@ class RateLimited(CraterViewError):
       separately.
 
     `retry_after` is seconds to wait, and what it means depends on which limit you hit:
-    for the two per-minute limits it is when the window rolls over; for the in-flight cap
-    and the full queue it is an interval to poll on, since nothing here predicts when a
-    slot frees.
+    for the two per-minute limits it is when the window rolls over; for new keys, when the
+    account may be given another; for the in-flight cap and the full queue it is an
+    interval to poll on, since nothing here predicts when a slot frees.
     """
 
-    def __init__(self, message: str, retry_after: float | None = None):
-        super().__init__(message, 429)
+    def __init__(self, message: str, retry_after: float | None = None,
+                 trace_id: str | None = None):
+        super().__init__(message, 429, trace_id)
         self.retry_after = retry_after
 
 
@@ -260,11 +309,12 @@ class Job:
     asked for a JPEG of a picture with transparency: the transparency, as a file of its own.
 
     `community` says the job was submitted by an account that was not paying — no credit
-    and no subscription — and is on the queue served after priority work, which always
-    takes a share of it rather than only what is left over: it waits longer at busy times
-    and never stalls behind paid work. Nothing is refused for want of payment — paying buys
-    a place at the front of the queue, not the right to submit — so an empty balance means
-    a longer wait and never an error.
+    and no subscription — and is on the community queue, which runs on shared, free
+    capacity: it waits longer at busy times, and never stops. An empty balance is never itself
+    a reason to refuse a job — paying moves work onto paid compute that scales with demand,
+    not the right to submit — but on some models the community queue takes smaller files.
+    `models()` lists each model's limits for your key, and a file over them is refused with
+    the limit named.
     """
 
     id: str
@@ -380,8 +430,10 @@ class Job:
         """Download the result."""
         if not self.output_url:
             raise CraterViewError(f"job {self.id} has no result (status {self.status})")
-        resp = requests.get(self.output_url, timeout=300)
-        resp.raise_for_status()
+        resp = _sent(requests.get, self.output_url, timeout=300)
+        if resp.status_code >= 400:
+            raise CraterViewError(f"storage refused the result of job {self.id}: "
+                                  f"HTTP {resp.status_code}", resp.status_code)
         return resp.content
 
     def save(self, path: str | Path) -> Path:
@@ -425,13 +477,15 @@ class CraterView:
     # ------------------------------------------------------------------ internals
 
     def _request(self, method: str, path: str, **kwargs) -> Any:
-        resp = self._session.request(method, f"{self.base_url}{path}",
-                                     timeout=self.timeout, **kwargs)
+        resp = _sent(self._session.request, method, f"{self.base_url}{path}",
+                     timeout=self.timeout, **kwargs)
+        trace_id = resp.headers.get("X-Trace-Id")
         if resp.status_code == 429:
             raise RateLimited(self._detail(resp),
-                              retry_after=float(resp.headers.get("Retry-After", 0) or 0))
+                              retry_after=float(resp.headers.get("Retry-After", 0) or 0),
+                              trace_id=trace_id)
         if resp.status_code >= 400:
-            raise CraterViewError(self._detail(resp), resp.status_code)
+            raise CraterViewError(self._detail(resp), resp.status_code, trace_id)
         # A 204 carries no body, so asking for JSON raises on a call that succeeded. Checked
         # by status rather than by looking for an empty body: this is the only response the
         # API sends without one, and a status is a fact rather than an inference.
@@ -455,9 +509,9 @@ class CraterView:
 
         `community` and the limits are answered *for the queue your key would use*. The API
         looks up the account and reports the queue a job from this key would land in — an
-        account that has paid for priority, by holding credit or by subscribing, gets the
-        priority queue, and one that has not gets the community queue, which is served after
-        priority work and always takes a share of it. So two keys asking at the same moment
+        account that is paying, by holding credit or by subscribing, gets the priority queue,
+        on paid compute that scales with demand, and one that is not gets the community queue,
+        on shared, free capacity. So two keys asking at the same moment
         can get different answers, and paying changes yours.
 
         `community` here means what `Job.community` means on a submitted job. How long a
@@ -505,9 +559,11 @@ class CraterView:
         # bytes by this point either way, so it is measured rather than guessed.
         slot = self._request("POST", "/v1/uploads",
                              json={"content_type": content_type, "content_length": len(data)})
-        put = requests.put(slot["upload_url"], data=data,
-                           headers={"Content-Type": content_type}, timeout=300)
-        put.raise_for_status()
+        put = _sent(requests.put, slot["upload_url"], data=data,
+                    headers={"Content-Type": content_type}, timeout=300)
+        if put.status_code >= 400:
+            raise CraterViewError(f"storage refused the upload: HTTP {put.status_code}",
+                                  put.status_code)
         return Upload(slot["input_key"], megapixels=_megapixels(data))
 
     def submit(self, model: str, input_key: str, *, wait: float = 0,
@@ -615,11 +671,24 @@ class CraterView:
         return self._request("POST", "/v1/webhooks/secret/rotate")["secret"]
 
     def keys(self) -> list[dict]:
-        """Every key on the account, including revoked ones, by prefix rather than value.
+        """Every key on the account, including revoked ones, by prefix rather than value,
+        newest first.
 
         A revoked key stays listed so that a client which started failing can be explained.
+        The API serves the list a page at a time; this fetches every page and returns them
+        together.
         """
-        return self._request("GET", "/v1/keys")
+        found: list[dict] = []
+        before = None
+        while True:
+            query = f"/v1/keys?limit={MAX_PAGE}" + (f"&before={before}" if before else "")
+            page = self._request("GET", query)
+            found.extend(page["data"])
+            cursor = page.get("next_before")
+            # As in `jobs`: a missing or non-advancing cursor stops rather than spinning.
+            if not page.get("has_more") or not cursor or cursor == before:
+                return found
+            before = cursor
 
     def create_key(self, name: str = "api") -> dict:
         """Mint another key. **The value is in this response and nowhere else.**
@@ -630,14 +699,18 @@ class CraterView:
 
         This is also how you rotate without downtime: create the new key, move your clients
         onto it, then revoke the old one.
+
+        An account is given a limited number of new keys an hour, whichever of its keys
+        asks: past it this raises `RateLimited`, whose `retry_after` says when to ask again.
         """
         return self._request("POST", "/v1/keys", json={"name": name})
 
     def revoke_key(self, key_id: str) -> None:
         """Stop a key working. Immediate, and not reversible.
 
-        You cannot revoke the key this client is authenticating with — the call would
-        succeed and leave you unable to make another.
+        You cannot revoke the key this client is authenticating with: it is refused with
+        status 409, because it would leave you unable to make another. Create a replacement,
+        move onto it, then revoke this one.
         """
         self._request("DELETE", f"/v1/keys/{key_id}")
 
