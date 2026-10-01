@@ -11,7 +11,7 @@ https://api.craterview.ai/openapi.json (rendered at https://api.craterview.ai/do
 complete; anything this file does not cover is there. Two official clients wrap it:
 
 ```bash
-pip install craterview          # Python 3.9+, one dependency
+pip install craterview          # Python 3.9+, three dependencies
 npm install craterview          # TypeScript source, one dependency — not loadable by plain node
 ```
 
@@ -70,8 +70,9 @@ Several keys on one account is the ordinary arrangement (`cv.create_key("staging
 `cv.revoke_key(...)`), and rotating without downtime means creating the new key, moving
 clients onto it, then revoking the old.
 
-A new account runs jobs with no credit at all: they go to the community queue, served after
-paid work, so they wait longer rather than being refused. Credits buy priority, not access.
+A new account runs jobs with no credit at all: they go to the community queue, which runs on
+shared, free capacity, so at busy times they wait longer rather than being refused. Paying
+moves work onto paid compute that scales with demand; it is not what lets a job run.
 
 ## The one call
 

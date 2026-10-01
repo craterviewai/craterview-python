@@ -13,7 +13,7 @@
       "name": "craterview",
       "source": "./plugins/craterview",
       "description": "Enhance, enlarge and restore photographs from the conversation, through CraterView's hosted tools. Connects the server for you; no key to handle.",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "category": "productivity",
       "keywords": ["image", "upscale", "enhance", "restore", "photo", "mcp"],
       "homepage": "https://craterview.ai"
@@ -22,7 +22,7 @@
       "name": "craterview-api",
       "source": "./plugins/craterview-api",
       "description": "Call the CraterView API from code: the Python and TypeScript clients, the upload, submit and collect flow, retries, webhooks, and how to get a key.",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "category": "development",
       "keywords": ["image", "upscale", "enhance", "restore", "api", "sdk"],
       "homepage": "https://craterview.ai"

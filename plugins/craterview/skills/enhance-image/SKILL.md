@@ -68,10 +68,12 @@ Give exactly one of `image_url` or `image_base64`.
 
 - **Prefer `image_url`** whenever the image has an address. Inline base64 is text in your
   context; a one-megabyte image is hundreds of thousands of tokens.
-- Use `image_base64` only for an image already in the conversation with no URL. A `data:`
-  URL is accepted.
-- The user's local file has no URL. If the client can read files but not serve them, base64
-  is the route; say so, and prefer the smallest copy that will do.
+- Use `image_base64` only for a file you can read — the user's local file, which has no URL,
+  or one you have written yourself. Encode the file's bytes; say that you are doing so, and
+  prefer the smallest copy that will do. A `data:` URL is accepted.
+- **An image you can only see — one attached to the conversation — cannot be sent.** Seeing
+  a picture does not give you its file, and base64 written from what you see is not that
+  image. Ask the user for a link to it, or for the file somewhere you can read it.
 
 ## Reading the result
 
@@ -98,6 +100,6 @@ Every result is a link, never the bytes.
 ## Cost
 
 Every completed job charges the account's credits — the price is per model and stated by the
-catalog. An account with no credit still runs: the job goes to the community queue, which is
-served after paid work, so it waits longer rather than being refused. Say what a batch will
+catalog. An account with no credit still runs: the job goes to the community queue, which
+runs on shared, free capacity, so at busy times it waits longer rather than being refused. Say what a batch will
 cost before running one, and never re-run a job the user did not ask to repeat.
