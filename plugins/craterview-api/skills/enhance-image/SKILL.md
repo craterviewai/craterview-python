@@ -144,7 +144,7 @@ skill was written.
 
 All image models also take `output_format` (`auto`, `png`, `jpeg`, `webp`; `auto` returns
 the format sent, except that HEIC/HEIF comes back as JPEG, or as PNG if it has
-transparency) and `quality` (96–100, for jpeg and webp). A picture with transparency asked
+transparency, and TIFF comes back as PNG) and `quality` (96–100, for jpeg and webp). A picture with transparency asked
 for as `jpeg` comes back as two files, because JPEG cannot hold it: the colour as the
 result, and the transparency as a grayscale JPEG under `result.alpha`. Bit depth and colour
 are returned as they were sent, so a 16-bit PNG comes back 16-bit; JPEG and WebP hold 8 bits

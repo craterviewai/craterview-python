@@ -780,5 +780,5 @@ def _megapixels(data: bytes) -> float | None:
 def _guess_type(path: Path) -> str:
     return {
         ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-        ".webp": "image/webp",
+        ".webp": "image/webp", ".tif": "image/tiff", ".tiff": "image/tiff",
     }.get(path.suffix.lower(), "application/octet-stream")
