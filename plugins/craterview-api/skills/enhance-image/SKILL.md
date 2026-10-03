@@ -147,8 +147,9 @@ the format sent, except that HEIC/HEIF comes back as JPEG, or as PNG if it has
 transparency, and TIFF comes back as PNG) and `quality` (96–100, for jpeg and webp). A picture with transparency asked
 for as `jpeg` comes back as two files, because JPEG cannot hold it: the colour as the
 result, and the transparency as a grayscale JPEG under `result.alpha`. Bit depth and colour
-are returned as they were sent, so a 16-bit PNG comes back 16-bit; JPEG and WebP hold 8 bits
-per channel and a deeper image returned as either comes back at 8. The catalogue is the authority on all of this — read it rather than relying on
+are returned as they were sent, so a 16-bit PNG comes back 16-bit, and a grayscale image comes
+back as RGB at its own depth; JPEG and WebP hold 8 bits per channel and a deeper image returned
+as either comes back at 8. The catalogue is the authority on all of this — read it rather than relying on
 this paragraph.
 
 Each model refuses a parameter it does not publish — a `scale` sent to `cv-restore-v1` is a

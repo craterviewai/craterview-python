@@ -22,7 +22,7 @@
       "name": "craterview-api",
       "source": "./plugins/craterview-api",
       "description": "Call the CraterView API from code: the Python and TypeScript clients, the upload, submit and collect flow, retries, webhooks, and how to get a key.",
-      "version": "0.1.5",
+      "version": "0.1.6",
       "category": "development",
       "keywords": ["image", "upscale", "enhance", "restore", "api", "sdk"],
       "homepage": "https://craterview.ai"
