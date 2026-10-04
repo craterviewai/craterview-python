@@ -3,7 +3,7 @@
 
     python enhance.py photo.jpg --model echo --scale 2            # free: proves the key and the plumbing
     python enhance.py photo.jpg --scale 4 -o photo-4x.png
-    python enhance.py scan.jpg --model cv-restore-v1 --param mode=full --param monochrome=true
+    python enhance.py scan.jpg --model cv-restore-v1 --param monochrome=true
     python enhance.py photo.jpg --model cv-content-check-v1        # prints the result, no file
 
 Needs `pip install craterview` and CV_API_KEY in the environment. The key is read

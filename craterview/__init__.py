@@ -526,8 +526,8 @@ class CraterView:
         written against it in advance. `video_coming_soon` says the same of one model's
         video, which is why `accepts` names no clip for it yet.
 
-        `tenure` says how long a model is for: `fixed` is a lasting part of the service,
-        and `comet` is a featured model that may be withdrawn at short notice.
+        `tenure` says what kind of model it is: `fixed` is a lasting part of the service,
+        and `comet` is a utility or fun experiment.
         """
         return self._request("GET", "/v1/models")
 
