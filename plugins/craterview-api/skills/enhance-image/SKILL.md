@@ -121,7 +121,7 @@ than writing:
 ```bash
 python scripts/enhance.py photo.jpg --model echo --scale 2       # free: proves the key and the plumbing
 python scripts/enhance.py photo.jpg --scale 4 -o photo-4x.png
-python scripts/enhance.py scan.jpg --model cv-restore-v1 --param mode=full --param monochrome=true
+python scripts/enhance.py scan.jpg --model cv-restore-v1 --param monochrome=true
 ```
 
 It needs `pip install craterview` and `CV_API_KEY` in the environment.
@@ -136,11 +136,11 @@ skill was written.
 | The user wants | Model | Parameters |
 | --- | --- | --- |
 | Sharper, larger, less noise, fewer compression artifacts — a soft scan, a small or cropped photo, a screenshot | `cv-enhance-v3` | `scale` 1–4 (default 4) |
-| A damaged print repaired — tears, creases, scratches, dust, faded colour | `cv-restore-v1` | `mode` `full` or `spots` (spots repairs dust and hairline scratches only and keeps every other pixel); `monochrome` for a black-and-white print; `size` `standard` (about one megapixel) or `large` (2048 px long side, several times slower); `seed` |
+| A damaged print repaired — tears, creases, scratches, dust, faded colour | `cv-restore-v1` | `monochrome` for a black-and-white print; `size` `standard` (about one megapixel) or `large` (2048 px long side, several times slower); `seed` |
 | A photograph with a face turned into a professional headshot | `cv-headshot-v1` | `attire` `business` (a dark jacket over a plain shirt), `as-is` (keeps what they are wearing) or `starship-captain` (a starship uniform on a starship's bridge, with pointed ears); `seed` |
 | An image screened against the content policy, unchanged | `cv-content-check-v1` | none; free; `result` carries `verdict` (`passed` or `flagged`); there is no output file |
 | To know whether an image was generated rather than captured, unchanged | `cv-real-check-v1` | none; free; `result` carries `verdict` (`generated`, `real` or `uncertain` — an estimate; do not act on `uncertain` either way) and `generated_probability` (0–1); there is no output file. An estimate, not a certificate: newer generators are detected less reliably than older ones |
-| The plumbing proved before anything is spent — the first call, a new integration, a test suite | `echo` | `scale` 1–4; free; a plain enlargement of the right shape; `credits` 0 or 1 opts one job into a charge to test billing. Not in the catalogue; callable by name |
+| The plumbing proved before anything is spent — the first call, a new integration, a test suite | `echo` | `scale` 1–4; free; a plain enlargement of the right shape; takes every file type the other image models take; `monochrome` returns it black and white, as the repair does; `credits` 0 or 1 opts one job into a charge to test billing. Not in the catalogue; callable by name |
 
 All image models also take `output_format` (`auto`, `png`, `jpeg`, `webp`; `auto` returns
 the format sent, except that HEIC/HEIF comes back as JPEG, or as PNG if it has
