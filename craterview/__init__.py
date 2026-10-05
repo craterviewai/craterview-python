@@ -349,8 +349,9 @@ class Job:
     credits: int | None = None
     eta_seconds: float | None = None
     community: bool = False
-    # Whether an automated check thought this image may fall outside what the service
-    # allows. `None` means it was not checked.
+    # Whether an automated check thought this job's images may fall outside what the service
+    # allows: the one you sent, and for some jobs the one that came back. `None` means they
+    # were not all checked.
     flagged: bool | None = None
     # Whether this result is retained past the ordinary expiry, because its owner asked.
     # A kept result also keeps working links.

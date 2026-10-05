@@ -136,7 +136,8 @@ skill was written.
 | The user wants | Model | Parameters |
 | --- | --- | --- |
 | Sharper, larger, less noise, fewer compression artifacts — a soft scan, a small or cropped photo, a screenshot | `cv-enhance-v3` | `scale` 1–4 (default 4) |
-| A damaged print repaired — tears, creases, scratches, dust, faded colour | `cv-restore-v1` | `monochrome` for a black-and-white print; `size` `standard` (about one megapixel) or `large` (2048 px long side, several times slower); `seed` |
+| Small, blurry or distorted faces made to look natural — the people in a group photo, usually after `cv-enhance-v3` has enlarged it | `cv-faces-v1` | `seed`; only faces too small to show clearly are redrawn and the rest of the picture comes back as sent (the catalogue says how small); a picture with none is refused as `no_small_face_found` and costs nothing |
+| A damaged print repaired — tears, creases, scratches, dust, faded colour | `cv-restore-v1` | `monochrome` for a black-and-white print; `context`, a sentence of what the picture cannot show — who is in it, the colour of what they wore — which the repair follows, so ask the user for it before a black-and-white photograph of people is returned in colour; `size` `standard` (about one megapixel) or `large` (2048 px long side, several times slower); `seed` |
 | A photograph with a face turned into a professional headshot | `cv-headshot-v1` | `attire` `business` (a dark jacket over a plain shirt), `as-is` (keeps what they are wearing) or `starship-captain` (a starship uniform on a starship's bridge, with pointed ears); `seed` |
 | An image screened against the content policy, unchanged | `cv-content-check-v1` | none; free; `result` carries `verdict` (`passed` or `flagged`); there is no output file |
 | To know whether an image was generated rather than captured, unchanged | `cv-real-check-v1` | none; free; `result` carries `verdict` (`generated`, `real` or `uncertain` — an estimate; do not act on `uncertain` either way) and `generated_probability` (0–1); there is no output file. An estimate, not a certificate: newer generators are detected less reliably than older ones |
@@ -154,7 +155,8 @@ this paragraph.
 
 Each model refuses a parameter it does not publish — a `scale` sent to `cv-restore-v1` is a
 422, not a no-op. `cv-restore-v1` and `cv-headshot-v1` rebuild a face as a close likeness
-rather than the original pixels, so keep the source. Stills only; video is not yet in service.
+rather than the original pixels, and `cv-faces-v1` draws a small face to fit rather than
+recovering it, so keep the source. Stills only; video is not yet in service.
 
 ## The explicit path
 

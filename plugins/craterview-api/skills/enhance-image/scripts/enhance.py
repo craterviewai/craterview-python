@@ -4,6 +4,7 @@
     python enhance.py photo.jpg --model echo --scale 2            # free: proves the key and the plumbing
     python enhance.py photo.jpg --scale 4 -o photo-4x.png
     python enhance.py scan.jpg --model cv-restore-v1 --param monochrome=true
+    python enhance.py scan.jpg --model cv-restore-v1 --param "context=A soldier in a red tunic"
     python enhance.py photo.jpg --model cv-content-check-v1        # prints the result, no file
 
 Needs `pip install craterview` and CV_API_KEY in the environment. The key is read
@@ -27,15 +28,26 @@ except ImportError:
     sys.exit("the craterview package is not installed: pip install craterview")
 
 
-def _value(text: str):
-    """`--param k=v` values are typed: true/false, integers, then strings."""
+def _value(text: str, kind: str | None):
+    """A `--param k=v` value as the type the model's schema gives the parameter.
+
+    Free text stays text, so `context=1975` is a year and not a number. A value that does
+    not read as its type is sent as written, and the API's refusal names the parameter. A
+    parameter the catalog does not describe is typed by its look: true/false, integers,
+    then strings.
+    """
     lowered = text.lower()
-    if lowered in ("true", "false"):
-        return lowered == "true"
-    try:
-        return int(text)
-    except ValueError:
+    if kind == "string":
         return text
+    if kind in ("boolean", None) and lowered in ("true", "false"):
+        return lowered == "true"
+    cast = {"integer": int, "number": float, None: int}.get(kind)
+    if cast is not None:
+        try:
+            return cast(text)
+        except ValueError:
+            pass
+    return text
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -60,16 +72,23 @@ def main(argv: list[str] | None = None) -> int:
     if not args.image.is_file():
         return _fail(f"{args.image} is not a file")
 
+    cv = CraterView(api_key=key)
     params: dict = {}
+    properties: dict = {}
+    if args.param:
+        try:
+            listed = {m["name"]: m for m in cv.models()}
+        except CraterViewError as e:
+            return _fail(f"the API refused the request: {e}")
+        properties = (listed.get(args.model) or {}).get("params_schema", {}).get("properties", {})
     for item in args.param:
         if "=" not in item:
             return _fail(f"--param wants KEY=VALUE, got {item!r}")
         k, v = item.split("=", 1)
-        params[k] = _value(v)
+        params[k] = _value(v, properties.get(k, {}).get("type"))
     if args.scale is not None:
         params["scale"] = args.scale
 
-    cv = CraterView(api_key=key)
     try:
         job = cv.run(args.image, model=args.model, timeout=args.timeout,
                      raise_on_failure=False, **params)
