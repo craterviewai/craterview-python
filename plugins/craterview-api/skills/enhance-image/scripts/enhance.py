@@ -55,8 +55,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("image", type=Path, help="the file to send")
     parser.add_argument("--model", default="cv-enhance-v3",
                         help="which model to run; `cv.models()` lists them (default: %(default)s)")
-    parser.add_argument("--scale", type=int,
-                        help="enlargement factor 1-4; only the enhancement model takes one")
+    parser.add_argument("--scale", type=float,
+                        help="enlargement factor from 1 to 4, not necessarily whole; only the "
+                             "enhancement model takes one, and --param width=... or "
+                             "height=... sizes the result in pixels instead")
     parser.add_argument("--param", action="append", default=[], metavar="KEY=VALUE",
                         help="any other model parameter, repeatable")
     parser.add_argument("-o", "--output", type=Path,

@@ -111,7 +111,7 @@ paid model gives. Write and test the integration against it, then switch the one
 job = cv.run("photo.jpg", model="echo", scale=2)     # free; swap in cv-enhance-v3 when it works
 ```
 
-It takes `scale` 1–4 like the enhancing model, and a `credits` parameter (0 or 1) that opts
+It takes `scale` 1–4, or a `width` or `height` in pixels instead, like the enhancing model, and a `credits` parameter (0 or 1) that opts
 one job into spending a single credit, for exercising billing without a paid model. Run it
 while the user is still getting things wrong; run the paid model once they are not.
 
@@ -121,6 +121,7 @@ than writing:
 ```bash
 python scripts/enhance.py photo.jpg --model echo --scale 2       # free: proves the key and the plumbing
 python scripts/enhance.py photo.jpg --scale 4 -o photo-4x.png
+python scripts/enhance.py photo.jpg --param width=3000             # a size in pixels instead of a factor
 python scripts/enhance.py scan.jpg --model cv-restore-v1 --param monochrome=true
 ```
 
@@ -135,13 +136,13 @@ skill was written.
 
 | The user wants | Model | Parameters |
 | --- | --- | --- |
-| Sharper, larger, less noise, fewer compression artifacts — a soft scan, a small or cropped photo, a screenshot | `cv-enhance-v3` | `scale` 1–4 (default 4) |
+| Sharper, larger, less noise, fewer compression artifacts — a soft scan, a small or cropped photo, a screenshot | `cv-enhance-v3` | `scale` 1–4, any factor (default 4); or `width` or `height` in pixels instead, the other side following the picture's proportions — one of the three |
 | Small, blurry or distorted faces made to look natural — the people in a group photo, usually after `cv-enhance-v3` has enlarged it | `cv-faces-v1` | `seed`; only faces too small to show clearly are redrawn and the rest of the picture comes back as sent (the catalogue says how small); a picture with none is refused as `no_small_face_found` and costs nothing |
 | A damaged print repaired — tears, creases, scratches, dust, faded colour | `cv-restore-v1` | `monochrome` for a black-and-white print; `context`, a sentence of what the picture cannot show — who is in it, the colour of what they wore — which the repair follows, so ask the user for it before a black-and-white photograph of people is returned in colour; `size` `standard` (about one megapixel) or `large` (2048 px long side, several times slower); `seed` |
 | A photograph with a face turned into a professional headshot | `cv-headshot-v1` | `attire` `business` (a dark jacket over a plain shirt), `as-is` (keeps what they are wearing) or `starship-captain` (a starship uniform on a starship's bridge, with pointed ears); `seed` |
 | An image screened against the content policy, unchanged | `cv-content-check-v1` | none; free; `result` carries `verdict` (`passed` or `flagged`); there is no output file |
 | To know whether an image was generated rather than captured, unchanged | `cv-real-check-v1` | none; free; `result` carries `verdict` (`generated`, `real` or `uncertain` — an estimate; do not act on `uncertain` either way) and `generated_probability` (0–1); there is no output file. An estimate, not a certificate: newer generators are detected less reliably than older ones |
-| The plumbing proved before anything is spent — the first call, a new integration, a test suite | `echo` | `scale` 1–4; free; a plain enlargement of the right shape; takes every file type the other image models take; `monochrome` returns it black and white, as the repair does; `credits` 0 or 1 opts one job into a charge to test billing. Not in the catalogue; callable by name |
+| The plumbing proved before anything is spent — the first call, a new integration, a test suite | `echo` | `scale` 1–4, or `width` or `height`, as above; free; a plain enlargement of the right shape; takes every file type the other image models take; `monochrome` returns it black and white, as the repair does; `credits` 0 or 1 opts one job into a charge to test billing. Not in the catalogue; callable by name |
 
 All image models also take `output_format` (`auto`, `png`, `jpeg`, `webp`; `auto` returns
 the format sent, except that HEIC/HEIF comes back as JPEG, or as PNG if it has
@@ -185,7 +186,11 @@ limits are decided from the file itself.
 sent multiplied by the enlargement in each direction, so a picture that is fine unenlarged
 can be refused at a larger scale, with the code `result_too_large`. The catalog publishes
 that ceiling for the key in use; divide it by the square of the scale to get the largest
-frame that may be sent. There are three ways to stay inside it. Send a `roi` — `x`, `y`, `width`, `height` as
+frame that may be sent. Some models are also bounded by how much of a picture they work on
+at once, whatever the scale: the catalog's `max_input_megapixels`, refused as
+`input_too_large`. The largest frame that may be sent is then the smaller of the two, and
+asking for less enlargement does not help with the second. There are three ways to stay
+inside them. Send a `roi` — `x`, `y`, `width`, `height` as
 fractions of the image you upload, origin top left — and the platform cuts that region
 before it works, so your file goes up exactly as it is; or cut the image yourself and upload
 the smaller one; or ask for less enlargement, which keeps the whole picture instead of part

@@ -89,8 +89,9 @@ Every result is a link, never the bytes.
   answers that the job is still going, call it again straight away; there is no need to pause
   between calls. Each answer carries the current estimate. **Do not call
   `enhance_image` again**: that runs and charges the work twice.
-- `scale` — the enlargement factor the job was sent. When you left it out, `scale_note` says
-  so and how the one used was chosen: the largest factor whose result fits the account's size
+- `scale` — the enlargement factor the job was sent, absent when you sized the result with a
+  `width` or `height` instead. When you left all three out, `scale_note` says so and how the
+  one used was chosen: the largest factor whose result fits the account's size
   limit for that model. Tell the user which factor was used. At 1× the picture keeps its size
   and has its detail rebuilt; if they wanted it larger, name a region of the picture (`roi`),
   which is what comes back enlarged.
