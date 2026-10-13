@@ -18,7 +18,7 @@ from craterview import CraterView
 
 cv = CraterView(api_key="cv_...")
 result = cv.run("photo.jpg", scale=4)
-result.save("photo-4x.jpg")
+result.save("photo-4x")      # → photo-4x.jpg, or .png where a JPEG cannot hold the result
 ```
 
 `run()` collapses the upload → submit → poll sequence into one call. That sequence is the
@@ -37,7 +37,7 @@ job = cv.run(
     "image.jpg", model="echo",
     scale=2, wait=30,
 )
-job.save("image-2x.jpg")
+job.save("image-2x")
 ```
 
 A parameter one model publishes is not one another accepts — `cv.models()` says which — and
@@ -72,6 +72,10 @@ It waits server-side first, so a job that finishes quickly costs a single round 
 falls back to polling for anything slower. With `raise_on_failure=False` a failed job is
 returned rather than raised, and `job.error` says why.
 
+Past `timeout` only the waiting stops. The job carries on and is charged only if it succeeds;
+the `CraterViewError` raised carries its `.job_id`, and `cv.wait_for(error.job_id)` collects
+it. Calling `run()` again would start, and bill, a second job.
+
 Which parameters a model accepts is published by the API rather than hard-coded here — see
 `cv.models()`.
 
@@ -91,9 +95,12 @@ a presigned URL and `bytes()` GETs the result the same way; the API moves keys, 
 
 ## Retries are yours to write
 
-**This client does not retry.** That is deliberate: only the caller knows where one logical
-request ends and the next begins, and a retry the client invented would be a second job you
-are billed for.
+**Outside `run()` and `wait_for()`, this client does not retry.** `run()` asks its submission
+once more, under one idempotency key, when the first got no answer or a failure on the
+platform's side, and `wait_for()` reads on through the same until its timeout; neither can make a
+second job. Every other call is sent once. That is deliberate: only the caller knows where one
+logical request ends and the next begins, and a retry the client invented would be a second
+job you are billed for.
 
 What it gives you instead is a key generator. Make one key per *logical request* and reuse
 it for every attempt at that request:
@@ -125,14 +132,16 @@ the same job.
 Everything raised by this client descends from `CraterViewError`, so one `except` catches
 the lot. `.status` carries the HTTP status where there was one, and `.trace_id` the API's
 `X-Trace-Id` for a request it answered and refused — the id to quote when you ask us about
-it.
+it. `.job_id` names the job an error is about, where there is one.
 
 | Exception | Meaning |
 |---|---|
 | `RateLimited` | 429 — one of five limits, and the message says which: the key's request rate, the account's upload URLs a minute, the account's new keys an hour, the account's jobs in flight, or a full queue. `.retry_after` is seconds to wait: until the window rolls over for the two per-minute limits, until a new key can be made for the hourly one, or an interval to poll on for the other two. |
-| `JobFailed` | The job ran and did not succeed. `.args[0]` says what you can do about it; `.error_code` is the half to branch on. |
+| `JobFailed` | The job ran and did not succeed. `.args[0]` says what you can do about it; `.error_code` is the half to branch on; `.job_id` is the job. |
 | `ConnectionFailed` | The request never reached the API or storage: refused, reset, or a name that would not resolve. Also a builtin `ConnectionError`. Safe to repeat with the same idempotency key. |
-| `TimedOut` | No answer within the client's `timeout`. Also a builtin `TimeoutError`. The request may have arrived, so repeat a submission with the same idempotency key, never a new one. |
+| `TimedOut` | No answer within the client's `timeout`. Also a builtin `TimeoutError`. The request may have arrived, so repeat a submission with the same idempotency key, never a new one. From `run()`, which uploads afresh each time, look for the job in `jobs()` instead. |
+| `InvalidId` | An id that is not one the API issued, refused before any request is made, so it carries no `.status`. Pass a job's or a key's `id` exactly as the API returned it. Also a builtin `ValueError`. |
+| `InvalidSignature` | A webhook delivery did not verify. Do not act on its body. |
 | `CraterViewError` | Everything else, including 4xx and 5xx from the API, and storage refusing an upload or a download. |
 
 ## `Job`
@@ -152,10 +161,9 @@ Every field the API publishes on a job is exposed here.
 | `output_url`, `download_url` | The result, presigned. One to display, one to save |
 | `thumbnail_url` | A small JPEG of the job's picture, for listings — the result, or what the model worked from when it produced no file. Null when none was drawn |
 | `input_url` | The picture the model worked from — the region, where you named one |
-| `alpha_url` | Only for a JPEG result of a picture with transparency, which JPEG cannot hold: the transparency as a grayscale JPEG, white where opaque. The result is then the colour alone |
 | `output_content_type` | The result's media type |
 | `output_bytes` | The result's size in bytes |
-| `bytes()`, `save(path)` | Download the result |
+| `bytes()`, `save(path)` | Download the result; `save` adds the result's suffix to a path with none and returns the path written |
 
 `result` is the whole of what the job produced, and the rows above it that describe the
 result's file are accessors onto `result["output"]` rather than separate fields — the API

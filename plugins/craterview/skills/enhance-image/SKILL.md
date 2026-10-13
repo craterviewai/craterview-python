@@ -28,8 +28,10 @@ The tools run on a CraterView account, and the connection is made once per assis
 3. From then on every job runs on that account, is billed to it, and appears in its history.
 
 If a tool call fails saying the connection's key was revoked or replaced, the user rotated
-their API key or the account was suspended. Reconnect — a fresh code from the dashboard —
-rather than retrying.
+their API key or the account was suspended. **Sign the server in again** rather than
+retrying — a plain reconnect keeps the key that stopped working. In Claude Code: `/mcp`,
+choose the server, clear its authentication, then authenticate again and paste a fresh code
+from the dashboard.
 
 In Claude Code, `/mcp` shows the server's status and starts the authorization if it has not
 happened. Any other MCP client connects the same way by adding
@@ -38,8 +40,14 @@ happened. Any other MCP client connects the same way by adding
 **No API key is involved in this path**, and that is the point of it: nothing worth stealing
 is ever on screen. If the user wants a key — to call the API from their own code, a script or
 a server — it is on the same dashboard under **Developer API**: **Show my API key**, then
-**Copy**. Keys begin with `cv_`. Rotating one replaces it immediately and disconnects every
-assistant linked to the account. The `craterview-api` plugin is the skill for that route.
+**Copy**. Keys begin with `cv_`. Each sign-in in a browser is given a key of its own, and an
+assistant linked from it holds that key. Rotating it from that browser's dashboard, while it
+is still signed in, replaces it immediately and disconnects every assistant linked from it,
+each until it is signed in again with a new code. One linked from another browser keeps
+working, and so does one linked from a sign-in that has since ended: signing out leaves its
+key working and out of every dashboard's reach, and the way to cut that assistant off is to
+revoke the key by its id through the API. The
+`craterview-api` plugin is the skill for that route.
 
 ## Choosing the model
 

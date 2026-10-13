@@ -13,6 +13,7 @@ you.
 
 from __future__ import annotations
 
+import re
 import secrets
 import time
 from dataclasses import dataclass, fields as _dataclass_fields
@@ -20,12 +21,13 @@ from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version as _installed_version
 from pathlib import Path
 from typing import Any, BinaryIO, Iterator
+from urllib.parse import urlsplit
 
 import requests
 
 __all__ = ["CraterView", "Job", "Upload", "CraterViewError", "RateLimited", "JobFailed",
-           "ConnectionFailed", "TimedOut", "new_idempotency_key", "verify_webhook", "InvalidSignature",
-           "SIGNATURE_HEADER", "TIMESTAMP_HEADER"]
+           "ConnectionFailed", "TimedOut", "InvalidId", "new_idempotency_key", "verify_webhook",
+           "InvalidSignature", "SIGNATURE_HEADER", "TIMESTAMP_HEADER"]
 
 # `version` in pyproject.toml is the only place a release number is written; this reads it
 # back from the installed distribution. It goes out as the User-Agent below, so a second
@@ -46,6 +48,13 @@ MAX_SERVER_WAIT = 30.0
 # The largest page the job history serves. Same reasoning: a bigger `limit` is refused, so
 # `jobs()` clamps rather than spending a request to be told no.
 MAX_PAGE = 200
+
+# The shape of each kind of id the API names in a path, exactly as it issues them. A method
+# that puts an id in its path takes one of these and nothing else, because anything else
+# builds some other request than the one the method names: `..` is a dot segment that the
+# transport resolves before sending, so `revoke_key("../account")` would be a request to
+# close the account, and quoting does not help, since `%2e%2e` is resolved the same way.
+_IDS = {"job": re.compile(r"job_[0-9a-f]{24}"), "key": re.compile(r"key_[0-9a-f]{24}")}
 
 
 def new_idempotency_key() -> str:
@@ -74,7 +83,8 @@ def new_idempotency_key() -> str:
     Reusing a key with a *different* request body is rejected with 409 rather than
     silently returning the earlier result.
 
-    This client does not retry on your behalf. The loop above is yours to write.
+    `submit()` does not retry on your behalf: the loop above is yours to write. `run()`, which
+    is one whole request from upload to result, keeps a key of its own and asks once more.
     """
     return f"idem_{secrets.token_urlsafe(24)}"
 
@@ -85,13 +95,18 @@ class CraterViewError(RuntimeError):
     `status` is the HTTP status where there was one. `trace_id` is the API's `X-Trace-Id` for
     a request it answered and refused — the id to quote when asking about it. None when the
     API never answered, or when the refusal came from storage.
+
+    `job_id` is the job an error is about, where there is one: a job that failed, one whose
+    wait ran out while it carried on, or one whose result could not be fetched. Quote it when
+    asking about the job, and collect a job still going by it.
     """
 
     def __init__(self, message: str, status: int | None = None,
-                 trace_id: str | None = None):
+                 trace_id: str | None = None, *, job_id: str | None = None):
         super().__init__(message)
         self.status = status
         self.trace_id = trace_id
+        self.job_id = job_id
 
 
 class ConnectionFailed(CraterViewError, ConnectionError):
@@ -101,13 +116,50 @@ class ConnectionFailed(CraterViewError, ConnectionError):
     the same idempotency key is safe."""
 
 
+class InvalidId(CraterViewError, ValueError):
+    """An id that is not one the API issued, refused before any request is made. Also the
+    builtin `ValueError`. Pass the `id` the API returned — a job's from `submit()` or
+    `jobs()`, a key's from `keys()` or `create_key()` — exactly as it came."""
+
+
+def _issued(kind: str, value: Any, argument: str) -> str:
+    """`value`, if it is a `kind` id as the API issues them; otherwise `InvalidId`."""
+    if isinstance(value, str) and _IDS[kind].fullmatch(value):
+        return value
+    raise InvalidId(f"{argument} must be a {kind} id as the API returned it — {kind}_ and "
+                    f"24 hexadecimal digits — not {value!r}; nothing was sent")
+
+
 class TimedOut(CraterViewError, TimeoutError):
     """No answer came within the client's `timeout`. Also the builtin `TimeoutError`.
 
     The request may still have arrived and been acted on, which is exactly the case an
     idempotency key exists for: repeat a submission with the same key and the API answers
     with the job the first attempt created, if it created one, rather than a second.
+
+    `run()` takes that remedy itself, once. Raised from it for its submission, the second
+    attempt got no answer either: `run()` uploads afresh each time, so repeating it is a
+    different request. The message says so, and where to look for the job either attempt may
+    have made.
     """
+
+
+#: How long `run()` waits before asking a submission again: the pause the web page, the phone
+#: app and the assistant connector take.
+_RESUBMIT_AFTER = 2.0
+
+
+def _worth_asking_again(failure: CraterViewError) -> bool:
+    """No answer, or a failure on the platform's side or on the way to it: asked again, the
+    request may be answered. A refusal, a 4xx, is the same answer the next time."""
+    return isinstance(failure, (TimedOut, ConnectionFailed)) or (failure.status or 0) >= 500
+
+
+def _queued_nothing(failure: CraterViewError | None) -> bool:
+    """The API's own 503 to a submission: the one status it answers before anything is
+    recorded, so nothing was queued or charged. A 503 page from something on the way carries
+    no trace id and says nothing about the job."""
+    return failure is not None and failure.status == 503 and failure.trace_id is not None
 
 
 def _sent(call, *args, **kwargs) -> requests.Response:
@@ -164,11 +216,13 @@ class JobFailed(CraterViewError):
     fault was ours, nothing was charged, and the same call is worth making again.
 
     An unfamiliar code is a failure with no special handling, not an error in itself: new ones
-    appear as new things become worth telling apart.
+    appear as new things become worth telling apart. `job_id` is the job, to quote when asking
+    about it.
     """
 
-    def __init__(self, message: str, error_code: str | None = None):
-        super().__init__(message)
+    def __init__(self, message: str, error_code: str | None = None,
+                 job_id: str | None = None):
+        super().__init__(message, job_id=job_id)
         self.error_code = error_code
 
 
@@ -212,19 +266,33 @@ def verify_webhook(body: bytes, headers: "dict[str, str] | Any", secret: str,
     import hmac
     import json
 
+    # Before the delivery is looked at: an unset secret is this receiver's configuration, not
+    # a delivery that failed to check out, and refusing every delivery as forged would hide it.
+    if not secret:
+        raise CraterViewError("verify_webhook was given no secret: pass the one "
+                              "webhook_secret() returns, or the one on the dashboard")
+
     signature = _header(headers, SIGNATURE_HEADER)
     timestamp = _header(headers, TIMESTAMP_HEADER)
     if not signature or not timestamp:
         raise InvalidSignature("delivery is missing its signature headers")
 
-    try:
-        age = time.time() - int(timestamp)
-    except ValueError:
-        raise InvalidSignature("delivery has an unreadable timestamp") from None
+    # Whole seconds in ASCII digits, as the platform writes it, and nothing else: `int()`
+    # would also take whitespace, a sign, underscores and other scripts' digits, and a long
+    # enough run overflows the subtraction below. Fifteen digits is past any time a clock
+    # will show.
+    if not (timestamp.isascii() and timestamp.isdigit() and len(timestamp) <= 15):
+        raise InvalidSignature("delivery has an unreadable timestamp")
+    age = time.time() - int(timestamp)
     # Both directions. A clock ahead of ours is as much a reason to distrust a delivery as
     # one behind it, and only checking the past accepts anything dated next year.
-    if tolerance and abs(age) > tolerance:
-        raise InvalidSignature(f"delivery is {age:.0f}s out of date")
+    if tolerance and age > tolerance:
+        raise InvalidSignature(f"delivery was signed {age:.0f}s ago, longer ago than the "
+                               f"{tolerance:g}s allowed: a copy replayed late, or a clock "
+                               f"here that is wrong")
+    if tolerance and -age > tolerance:
+        raise InvalidSignature(f"delivery is dated {-age:.0f}s ahead of this machine's clock, "
+                               f"more than the {tolerance:g}s allowed: check the clock here")
 
     expected = "sha256=" + hmac.new(
         secret.encode(), timestamp.encode() + b"." + body, hashlib.sha256).hexdigest()
@@ -233,8 +301,12 @@ def verify_webhook(body: bytes, headers: "dict[str, str] | Any", secret: str,
     # suits rather than the moment you asked for one.
     #
     # `compare_digest` rather than `==`: a comparison that returns early leaks, one character
-    # at a time, how much of a guess was right.
-    if not any(hmac.compare_digest(expected, entry.strip()) for entry in signature.split(",")):
+    # at a time, how much of a guess was right. Over bytes, because it refuses to compare a
+    # `str` holding anything above U+007F, and the header is whatever the sender wrote.
+    # `surrogatepass` so that even a lone surrogate encodes, and is then simply not a match.
+    wanted = expected.encode()
+    if not any(hmac.compare_digest(wanted, entry.strip().encode("utf-8", "surrogatepass"))
+               for entry in signature.split(",")):
         raise InvalidSignature("signature does not match")
 
     try:
@@ -305,8 +377,7 @@ class Job:
     from, so a result can be shown against it — and where you named a region, it is that
     region, so what was used is something you can look at rather than something to take on
     trust. It is not the file you uploaded: yours stays yours and is removed on its own
-    schedule. Both expire with the job's other pictures. `alpha_url` is there only when you
-    asked for a JPEG of a picture with transparency: the transparency, as a file of its own.
+    schedule. Both expire with the job's other pictures.
 
     `community` says the job was submitted by an account that was not paying — no credit
     and no subscription — and is on the community queue, which runs on shared, free
@@ -350,8 +421,9 @@ class Job:
     eta_seconds: float | None = None
     community: bool = False
     # Whether an automated check thought this job's images may fall outside what the service
-    # allows: the one you sent, and for some jobs the one that came back. `None` means they
-    # were not all checked.
+    # allows: the part of your image the job worked on (all of it, unless you named a
+    # region), and for some jobs the one that came back. `None` means they were not all
+    # checked.
     flagged: bool | None = None
     # Whether this result is retained past the ordinary expiry, because its owner asked.
     # A kept result also keeps working links.
@@ -400,17 +472,6 @@ class Job:
         return given.get("url") if isinstance(given, dict) else None
 
     @property
-    def alpha_url(self) -> str | None:
-        """The transparency of a result you asked for as JPEG, which cannot hold it.
-
-        A grayscale JPEG the size of the result: white where it is opaque, black where it is
-        transparent. The result itself is then the colour alone, not placed on any
-        background, so the two together are the picture. None for every other result.
-        """
-        mask = (self.result or {}).get("alpha")
-        return mask.get("url") if isinstance(mask, dict) else None
-
-    @property
     def output_content_type(self) -> str | None:
         return self._output.get("content_type")
 
@@ -430,15 +491,47 @@ class Job:
     def bytes(self) -> bytes:
         """Download the result."""
         if not self.output_url:
-            raise CraterViewError(f"job {self.id} has no result (status {self.status})")
+            raise CraterViewError(self._no_file(), job_id=self.id)
         resp = _sent(requests.get, self.output_url, timeout=300)
+        # A link is as old as the read that brought it, and storage answers one past its
+        # expiry with 403 — so that is what a 403 almost always is, and a fresh read the fix.
+        if resp.status_code == 403:
+            raise CraterViewError(
+                f"storage refused the result of job {self.id} (HTTP 403): its link has most "
+                f'likely expired. Read the job again, job("{self.id}"), for fresh links.',
+                403, job_id=self.id)
         if resp.status_code >= 400:
             raise CraterViewError(f"storage refused the result of job {self.id}: "
-                                  f"HTTP {resp.status_code}", resp.status_code)
+                                  f"HTTP {resp.status_code}", resp.status_code, job_id=self.id)
         return resp.content
 
+    def _no_file(self) -> str:
+        """Why there is no file to download, which depends on where the job stands."""
+        if not self.done:
+            return (f"job {self.id} has no result yet: it is still {self.status}. "
+                    f"Wait for it with wait_for() first.")
+        if self.status == "failed":
+            code = f" ({self.error_code})" if self.error_code else ""
+            why = self.error or "no reason was given"
+            return f"job {self.id} failed, so it has no result: {why}{code}"
+        # Succeeded, with no file. Either its model answers in `result` alone, or the file
+        # has gone; a job read after its files expire looks the same as one that never had
+        # any, so both are said rather than one guessed at.
+        return (f"job {self.id} has no file to download: its model answers in `result` "
+                f"alone, or its file has expired or been deleted")
+
     def save(self, path: str | Path) -> Path:
+        """Write the result to `path`, and return the path written.
+
+        A path with no suffix is given the one for the format that came back, which may not be
+        the one asked for: `output_format` is a preference, and a picture that format cannot
+        hold comes back as PNG (`output_content_type` says which). So `save("photo-4x")`
+        writes `photo-4x.jpg` or `photo-4x.png`, whichever the result is. A path with a suffix
+        is written as given.
+        """
         path = Path(path)
+        if not path.suffix:
+            path = path.with_name(path.name + _RESULT_SUFFIXES.get(self.output_content_type, ""))
         path.write_bytes(self.bytes())
         return path
 
@@ -492,14 +585,33 @@ class CraterView:
         # API sends without one, and a status is a fact rather than an inference.
         if resp.status_code == 204:
             return None
-        return resp.json()
-
-    @staticmethod
-    def _detail(resp: requests.Response) -> str:
         try:
-            return resp.json().get("detail") or resp.text
-        except Exception:
-            return resp.text or f"HTTP {resp.status_code}"
+            return resp.json()
+        except ValueError:
+            raise CraterViewError(self._not_the_api(resp), resp.status_code, trace_id) from None
+
+    def _detail(self, resp: requests.Response) -> str:
+        """The API's own words for a refusal, or a sentence saying the answer was not its."""
+        try:
+            body = resp.json()
+        except ValueError:
+            return self._not_the_api(resp)
+        return (_spoken(body.get("detail")) if isinstance(body, dict) else None) \
+            or self._not_the_api(resp)
+
+    def _not_the_api(self, resp: requests.Response) -> str:
+        """For an answer that is not the API's JSON: an error page from something between here
+        and the API, or a `base_url` that names something else. The body itself is left out —
+        a page of markup buries the one line worth reading."""
+        host = urlsplit(self.base_url).netloc or self.base_url
+        said = f"{host} answered HTTP {resp.status_code} with something other than the API's JSON"
+        if resp.status_code >= 500:
+            return (said + ": a failure on the way to the API rather than a refusal. Worth "
+                    "repeating — with the same idempotency key, for a submission, so it "
+                    "cannot start a second job.")
+        if resp.status_code == 429:
+            return said + "."
+        return said + f"; check that base_url is the API's address ({DEFAULT_BASE_URL} by default)."
 
     # ---------------------------------------------------------------------- public
 
@@ -510,8 +622,8 @@ class CraterView:
 
         `community` and the limits are answered *for the queue your key would use*. The API
         looks up the account and reports the queue a job from this key would land in — an
-        account that is paying, by holding credit or by subscribing, gets the priority queue,
-        on paid compute that scales with demand, and one that is not gets the community queue,
+        account that is paying, by holding credit or by subscribing, runs on paid compute,
+        which scales with demand, and one that is not gets the community queue,
         on shared, free capacity. So two keys asking at the same moment
         can get different answers, and paying changes yours.
 
@@ -544,16 +656,22 @@ class CraterView:
         for your image rather than a typical one. `None` for a file the reader does not
         know, which changes nothing but the estimate.
         """
+        # The type is what the bytes say they are, then what the file's name says, then
+        # nothing: an undeclared upload is accepted and the file is identified when the job
+        # runs. A type the API does not take is refused by this first request, before any
+        # bytes are sent, with the list of what it does take.
         if isinstance(image, (str, Path)):
             path = Path(image)
             data = path.read_bytes()
-            content_type = content_type or _guess_type(path)
-        elif isinstance(image, bytes):
-            data = image
-            content_type = content_type or "image/png"
+            content_type = content_type or _sniff(data) or _guess_type(path)
         else:
-            data = image.read()
-            content_type = content_type or "image/png"
+            data = image if isinstance(image, bytes) else image.read()
+            content_type = content_type or _sniff(data) or "application/octet-stream"
+        # Sent, it would come back as a refusal of `content_length`, a field the caller never
+        # wrote. Said here in their terms instead, before anything is requested.
+        if not data:
+            what = str(image) if isinstance(image, (str, Path)) else "the image given"
+            raise CraterViewError(f"{what} is empty (0 bytes): there is nothing to upload")
 
         # The length is declared and then signed into the URL, so it must be the length
         # actually sent — storage refuses any other size with a signature error. `data` is
@@ -571,7 +689,8 @@ class CraterView:
                idempotency_key: str | None = None, webhook_url: str | None = None,
                custom_id: str | None = None, input_megapixels: float | None = None,
                **params) -> Job:
-        """Queue a job. `wait` holds the response open for a settled result.
+        """Queue a job. `wait` holds the response open for a settled result, for up to that
+        many seconds; the API holds one for at most 30, so a longer wait is asked as 30.
 
         `input_megapixels` tells the API how big the input is (width × height ÷ 1,000,000),
         so `eta_seconds` is estimated for your image rather than a typical one. It changes
@@ -592,6 +711,10 @@ class CraterView:
         delivery that fails somewhere you cannot see.
         """
         headers = {"Idempotency-Key": idempotency_key} if idempotency_key else {}
+        # Held to the API's ceiling, so a longer wait is a long poll rather than a refusal.
+        # None at all is the API's own default, and is left unsaid.
+        wait = min(wait, MAX_SERVER_WAIT)
+        path = f"/v1/jobs?wait={wait:g}" if wait > 0 else "/v1/jobs"
         body = {"model": model, "input_key": input_key, "params": params}
         if webhook_url:
             body["webhook_url"] = webhook_url
@@ -601,11 +724,14 @@ class CraterView:
             input_megapixels = input_key.megapixels
         if input_megapixels is not None and input_megapixels > 0:
             body["input_megapixels"] = float(input_megapixels)
-        payload = self._request("POST", f"/v1/jobs?wait={wait}", json=body, headers=headers)
+        payload = self._request("POST", path, json=body, headers=headers)
         return Job._from(payload, self)
 
     def job(self, job_id: str) -> Job:
-        return Job._from(self._request("GET", f"/v1/jobs/{job_id}"), self)
+        """One job, by the `id` the API gave it. Anything that is not a job id raises
+        `InvalidId` without a request being made."""
+        return Job._from(self._request("GET", f"/v1/jobs/{_issued('job', job_id, 'job_id')}"),
+                         self)
 
     def jobs(self, limit: int = 50, status: str | None = None) -> Iterator[Job]:
         """Iterate the account's job history, newest first, paging transparently.
@@ -712,19 +838,43 @@ class CraterView:
         You cannot revoke the key this client is authenticating with: it is refused with
         status 409, because it would leave you unable to make another. Create a replacement,
         move onto it, then revoke this one.
+
+        `key_id` is a key's `id` from `keys()` or `create_key()`, never its value or its
+        prefix. Anything else raises `InvalidId` without a request being made.
         """
-        self._request("DELETE", f"/v1/keys/{key_id}")
+        self._request("DELETE", f"/v1/keys/{_issued('key', key_id, 'key_id')}")
 
     def wait_for(self, job: Job | str, timeout: float = 600, poll: float = 1.0) -> Job:
-        """Block until a job settles. Prefer `wait=` on submit for short jobs."""
-        job_id = job.id if isinstance(job, Job) else job
+        """Block until a job settles. Prefer `wait=` on submit for short jobs.
+
+        Past `timeout` this raises `CraterViewError` with the job's `job_id`. Only the wait has
+        ended: the job carries on, and is collected by calling this again with that id.
+
+        A read that gets no answer, a failure on the way to the API or a request to slow down
+        is not the job's, and the wait goes on through it until `timeout`. Anything else it
+        raises carries the `job_id` too, so no failure here loses the job.
+        """
+        job_id = _issued("job", job.id if isinstance(job, Job) else job, "job")
+        current = job if isinstance(job, Job) else None
         deadline = time.time() + timeout
         while time.time() < deadline:
-            current = self.job(job_id)
+            try:
+                current = self.job(job_id)
+            except CraterViewError as failure:
+                if not (_worth_asking_again(failure) or isinstance(failure, RateLimited)):
+                    failure.job_id = failure.job_id or job_id
+                    raise
+                time.sleep(max(poll, getattr(failure, "retry_after", None) or 0))
+                continue
             if current.done:
                 return current
             time.sleep(poll)
-        raise CraterViewError(f"job {job_id} did not finish within {timeout}s")
+        where = f"still {current.status}" if current else "not finished"
+        raise CraterViewError(
+            f"job {job_id} is {where} after {timeout:g}s of waiting. It has not failed: it "
+            f"carries on, and is charged only if it succeeds. Collect it with "
+            f'wait_for("{job_id}") or job("{job_id}"); submitting the request again starts a '
+            f"second job, charged as well.", job_id=job_id)
 
     def run(self, image: str | Path | bytes | BinaryIO, *, model: str = "cv-enhance-v3",
                 wait: float = MAX_SERVER_WAIT, timeout: float = 600,
@@ -732,15 +882,77 @@ class CraterView:
         """Upload, submit and wait, in one call — the common case.
 
         Uses server-side waiting first so a fast job costs a single round trip, then falls
-        back to polling for anything slower.
+        back to polling for anything slower. The server is asked to hold the submission for at
+        most half this client's own `timeout`, so its answer arrives before the client stops
+        listening for it.
+
+        Past `timeout` the job is not given up on, only waited for: the error carries its
+        `job_id`, to collect it by with `wait_for`.
+
+        **One submission, asked at most twice.** A submission that got no answer, or met a
+        failure on the platform's side, may have made the job before it failed, so it is asked
+        once more under one idempotency key, and the API answers with the job the first attempt
+        made if it made one — never a second. Pass `idempotency_key` to choose the key. Refused
+        both times by the API's own 503, which it answers before anything is recorded, the
+        error says so in its words.
         """
         input_key = self.upload(image)
-        job = self.submit(model, input_key, wait=min(wait, MAX_SERVER_WAIT), **params)
+        key = params.pop("idempotency_key", None) or new_idempotency_key()
+
+        def submitted() -> Job:
+            return self.submit(model, input_key, wait=min(wait, self.timeout / 2),
+                               idempotency_key=key, **params)
+
+        first: CraterViewError | None = None
+        try:
+            try:
+                job = submitted()
+            except CraterViewError as failure:
+                if not _worth_asking_again(failure):
+                    raise
+                first = failure
+                time.sleep(_RESUBMIT_AFTER)
+                job = submitted()
+        except CraterViewError as failure:
+            if not _worth_asking_again(failure):
+                raise
+            if _queued_nothing(first) and _queued_nothing(failure):
+                raise type(failure)(
+                    f"the submission was asked twice, and both times CraterView said why: "
+                    f"{failure}", failure.status, failure.trace_id) from failure
+            raise type(failure)(
+                f"the submission was asked twice and answered neither time ({failure}), so a "
+                f"job may have been made; if it was, it runs and is charged only if it "
+                f"succeeds. Look for it with jobs(), newest first, before running this again: "
+                f"run() uploads afresh, so repeating it starts a second job.",
+                failure.status, failure.trace_id) from failure
         if not job.done:
             job = self.wait_for(job, timeout=timeout)
         if raise_on_failure and not job.succeeded:
-            raise JobFailed(job.error or "job failed", job.error_code)
+            raise JobFailed(job.error or "job failed", job.error_code, job.id)
         return job
+
+
+def _spoken(detail: Any) -> str | None:
+    """The API's `detail` as one sentence, or None where it holds no words.
+
+    Usually a string. A request its validator refuses comes back as a list instead, one entry
+    per field, which reads here as "field: what is wrong" — and without the validator's own
+    "Value error, " in front of a sentence the API wrote for a reader.
+    """
+    if isinstance(detail, str):
+        return detail or None
+    if not isinstance(detail, list):
+        return None
+    said = []
+    for entry in detail:
+        if not isinstance(entry, dict) or not entry.get("msg"):
+            continue
+        message = str(entry["msg"]).removeprefix("Value error, ")
+        # A location of one part — the body as a whole — names no field worth printing.
+        where = entry.get("loc") or []
+        said.append(f"{where[-1]}: {message}" if len(where) > 1 else message)
+    return "; ".join(said) or None
 
 
 class Upload(str):
@@ -778,8 +990,52 @@ def _megapixels(data: bytes) -> float | None:
         return None
 
 
+def _sniff(data: bytes) -> str | None:
+    """The media type the bytes are, from the signature at their start, or None.
+
+    Formats the API does not take are named too, so that the refusal says what the file is
+    rather than that it is unknown.
+    """
+    head = data[:64]
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if head.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "image/webp"
+    if head[:4] in (b"II*\x00", b"MM\x00*", b"II+\x00", b"MM\x00+"):
+        return "image/tiff"
+    if head.startswith((b"\xff\x0a", b"\x00\x00\x00\x0cJXL \r\n\x87\n")):
+        return "image/jxl"
+    if head[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if head[4:8] == b"ftyp":
+        # An ISO base media file names its brands: the major one, then the compatible ones
+        # until the end of the `ftyp` box. An AVIF may declare the generic `mif1` first and
+        # `avif` among the rest, so every brand is read before deciding.
+        end = min(int.from_bytes(head[:4], "big"), len(head))
+        brands = {head[8:12]} | {head[i:i + 4] for i in range(16, end - 3, 4)}
+        if brands & {b"avif", b"avis"}:
+            return "image/avif"
+        if head[8:12] in (b"heic", b"heix", b"heim", b"heis"):
+            return "image/heic"
+        if head[8:12] in (b"mif1", b"mif2", b"msf1"):
+            return "image/heif"
+    return None
+
+
+# The suffix each format a result comes back in is saved under.
+_RESULT_SUFFIXES = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp",
+                    "video/mp4": ".mp4"}
+
+# The media type a file's name implies, for bytes `_sniff` cannot name.
+_EXTENSIONS = {
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".webp": "image/webp", ".tif": "image/tiff", ".tiff": "image/tiff",
+    ".heic": "image/heic", ".heif": "image/heif", ".avif": "image/avif",
+    ".jxl": "image/jxl", ".gif": "image/gif", ".bmp": "image/bmp",
+}
+
+
 def _guess_type(path: Path) -> str:
-    return {
-        ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-        ".webp": "image/webp", ".tif": "image/tiff", ".tiff": "image/tiff",
-    }.get(path.suffix.lower(), "application/octet-stream")
+    return _EXTENSIONS.get(path.suffix.lower(), "application/octet-stream")

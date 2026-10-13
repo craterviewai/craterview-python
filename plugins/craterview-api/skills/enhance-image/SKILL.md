@@ -11,7 +11,7 @@ https://api.craterview.ai/openapi.json (rendered at https://api.craterview.ai/do
 complete; anything this file does not cover is there. Two official clients wrap it:
 
 ```bash
-pip install craterview          # Python 3.9+, three dependencies
+pip install "craterview>=0.4.18" # Python 3.9+, three dependencies
 npm install craterview          # TypeScript source, one dependency — not loadable by plain node
 ```
 
@@ -65,7 +65,11 @@ A key carries the account's whole allowance and does not expire, so it belongs s
 never in a browser bundle, a commit, or a notebook cell that gets saved.
 
 **Rotating replaces the key immediately** — the old one stops at once, and any assistant
-connected to the account is disconnected with it. Tell the user that before they press it.
+connected from that browser's sign-in is disconnected with it. Each sign-in in a browser has a
+key of its own, so one connected from another browser keeps working, and so does one connected
+from a sign-in that has since ended, until its key is revoked by id: `cv.keys()` lists the
+account's keys, a sign-in's named for the browser it was made in, and `cv.revoke_key(...)` ends
+one. Tell the user that before they press it.
 Several keys on one account is the ordinary arrangement (`cv.create_key("staging")`,
 `cv.revoke_key(...)`), and rotating without downtime means creating the new key, moving
 clients onto it, then revoking the old.
@@ -81,7 +85,7 @@ from craterview import CraterView
 
 cv = CraterView(api_key=os.environ["CV_API_KEY"])
 job = cv.run("photo.jpg", model="cv-enhance-v3", scale=4)
-job.save("photo-4x.png")
+saved = job.save("photo-4x")        # adds the suffix of the format that came back
 ```
 
 ```ts
@@ -93,8 +97,13 @@ const out = await job.blob();
 ```
 
 `run()` uploads, submits with a server-side wait, then polls for anything slower, and raises
-`JobFailed` if the job did not succeed. Model parameters pass straight through as keyword
-arguments (Python) or option fields (TypeScript).
+`JobFailed` if the job did not succeed. A submission that got no answer is asked once more under
+one idempotency key, so it cannot make a second job, and a failed read of the job is waited
+through. Model parameters pass straight through as keyword
+arguments (Python) or option fields (TypeScript). If its `timeout` runs out first, only the
+waiting stops: the job carries on and is charged only if it succeeds, and the error's
+`job_id` (`jobId` in TypeScript) collects it with `wait_for` (`waitFor`). Calling `run()`
+again starts, and bills, a second job.
 
 **The TypeScript client is shipped as `.ts` source, and `node` alone will not load it** —
 not with type stripping either, which Node never applies under `node_modules`. Run a script
@@ -120,39 +129,39 @@ than writing:
 
 ```bash
 python scripts/enhance.py photo.jpg --model echo --scale 2       # free: proves the key and the plumbing
-python scripts/enhance.py photo.jpg --scale 4 -o photo-4x.png
+python scripts/enhance.py photo.jpg --scale 4 -o photo-4x
 python scripts/enhance.py photo.jpg --param width=3000             # a size in pixels instead of a factor
 python scripts/enhance.py scan.jpg --model cv-restore-v1 --param monochrome=true
 ```
 
-It needs `pip install craterview` and `CV_API_KEY` in the environment.
+It needs `pip install "craterview>=0.4.18"` — an older client is missing what the script reads off an error — and `CV_API_KEY` in the environment.
 
 ## Choosing the model
 
 `cv.models()` (`GET /v1/models`) is authoritative: it publishes each model's parameter
-schema, price, accepted types and size limit, and the queue the key would land in. Read it
-rather than trusting this table when the answer matters; this is what was in service when the
-skill was written.
+schema, price (`credits_per_image`), accepted types and size limits, and the queue the key
+would land in. This table says what each model is for and what its parameters do; their
+ranges and defaults, the prices and the limits are the catalogue's, so read them there
+rather than from here. It is what was in service when the skill was written.
 
 | The user wants | Model | Parameters |
 | --- | --- | --- |
-| Sharper, larger, less noise, fewer compression artifacts — a soft scan, a small or cropped photo, a screenshot | `cv-enhance-v3` | `scale` 1–4, any factor (default 4); or `width` or `height` in pixels instead, the other side following the picture's proportions — one of the three |
-| Small, blurry or distorted faces made to look natural — the people in a group photo, usually after `cv-enhance-v3` has enlarged it | `cv-faces-v1` | `seed`; only faces too small to show clearly are redrawn and the rest of the picture comes back as sent (the catalogue says how small); a picture with none is refused as `no_small_face_found` and costs nothing |
-| A damaged print repaired — tears, creases, scratches, dust, faded colour | `cv-restore-v1` | `monochrome` for a black-and-white print; `context`, a sentence of what the picture cannot show — who is in it, the colour of what they wore — which the repair follows, so ask the user for it before a black-and-white photograph of people is returned in colour; `size` `standard` (about one megapixel) or `large` (2048 px long side, several times slower); `seed` |
+| Sharper, larger, less noise, fewer compression artifacts — a soft scan, a small or cropped photo, a screenshot | `cv-enhance-v3` | `scale`, the enlargement, not necessarily whole; or `width` or `height` in pixels instead, the other side following the picture's proportions — one of the three |
+| Small, blurry or distorted faces made to look natural — the people in a group photo, usually after `cv-enhance-v3` has enlarged it | `cv-faces-v1` | `seed`; only faces too small to show clearly are redrawn and the rest of the picture comes back as sent (the catalogue says how small); a picture with none fails as `no_small_face_found`, which is not charged |
+| A damaged print repaired — tears, creases, scratches, dust, faded colour | `cv-restore-v1` | `monochrome` for a black-and-white print; `context`, a sentence of what the picture cannot show — who is in it, the colour of what they wore — which the repair follows, so ask the user for it before a black-and-white photograph of people is returned in colour; `size` `standard` or `large` (larger and several times slower; the catalogue says how large); `seed` |
 | A photograph with a face turned into a professional headshot | `cv-headshot-v1` | `attire` `business` (a dark jacket over a plain shirt), `as-is` (keeps what they are wearing) or `starship-captain` (a starship uniform on a starship's bridge, with pointed ears); `seed` |
-| An image screened against the content policy, unchanged | `cv-content-check-v1` | none; free; `result` carries `verdict` (`passed` or `flagged`); there is no output file |
-| To know whether an image was generated rather than captured, unchanged | `cv-real-check-v1` | none; free; `result` carries `verdict` (`generated`, `real` or `uncertain` — an estimate; do not act on `uncertain` either way) and `generated_probability` (0–1); there is no output file. An estimate, not a certificate: newer generators are detected less reliably than older ones |
+| An image screened against the content policy, unchanged | `cv-content-check-v1` | none; `result` carries `verdict` (`passed` or `flagged`); there is no output file |
+| To know whether an image was generated rather than captured, unchanged | `cv-real-check-v1` | none; `result` carries `verdict` (`generated`, `real` or `uncertain` — an estimate; do not act on `uncertain` either way) and `generated_probability` (0–1); there is no output file. An estimate, not a certificate: newer generators are detected less reliably than older ones |
 | The plumbing proved before anything is spent — the first call, a new integration, a test suite | `echo` | `scale` 1–4, or `width` or `height`, as above; free; a plain enlargement of the right shape; takes every file type the other image models take; `monochrome` returns it black and white, as the repair does; `credits` 0 or 1 opts one job into a charge to test billing. Not in the catalogue; callable by name |
 
-All image models also take `output_format` (`auto`, `png`, `jpeg`, `webp`; `auto` returns
-the format sent, except that HEIC/HEIF comes back as JPEG, or as PNG if it has
-transparency, and TIFF comes back as PNG) and `quality` (96–100, for jpeg and webp). A picture with transparency asked
-for as `jpeg` comes back as two files, because JPEG cannot hold it: the colour as the
-result, and the transparency as a grayscale JPEG under `result.alpha`. Bit depth and colour
-are returned as they were sent, so a 16-bit PNG comes back 16-bit, and a grayscale image comes
-back as RGB at its own depth; JPEG and WebP hold 8 bits per channel and a deeper image returned
-as either comes back at 8. The catalogue is the authority on all of this — read it rather than relying on
-this paragraph.
+All image models also take `output_format` (`auto`, `png`, `jpeg`, `webp`) and `quality` (for
+jpeg and webp). The format asked for — under `auto`, the one sent, with HEIC/HEIF preferring
+JPEG and TIFF preferring PNG — is a preference: where it cannot hold the picture whole, the
+result comes back as PNG, so a picture with an alpha channel asked for as `jpeg`, or one deeper
+than 8 bits asked for as `jpeg` or `webp`, is a PNG. `result.output.content_type` says which
+came back. Bit depth and colour are returned as they were sent, so a 16-bit PNG comes back
+16-bit, and a grayscale image comes back as RGB at its own depth.
+The catalogue is the authority on all of this — read it rather than relying on this paragraph.
 
 Each model refuses a parameter it does not publish — a `scale` sent to `cv-restore-v1` is a
 422, not a no-op. `cv-restore-v1` and `cv-headshot-v1` rebuild a face as a close likeness
@@ -184,10 +193,11 @@ limits are decided from the file itself.
 
 **A model that enlarges is bounded by the size of what it returns.** The result is the frame
 sent multiplied by the enlargement in each direction, so a picture that is fine unenlarged
-can be refused at a larger scale, with the code `result_too_large`. The catalog publishes
-that ceiling for the key in use; divide it by the square of the scale to get the largest
-frame that may be sent. Some models are also bounded by how much of a picture they work on
-at once, whatever the scale: the catalog's `max_input_megapixels`, refused as
+can fail at a larger scale, as a failed job with the code `result_too_large` — accepted
+at submit, failed before the model runs, and not charged. The catalog publishes that ceiling
+for the key in use; divide it by the square of the scale to get the largest frame that may
+be sent. Some models are also bounded by how much of a picture they work on at once,
+whatever the scale: the catalog's `max_input_megapixels`, which fails the same way as
 `input_too_large`. The largest frame that may be sent is then the smaller of the two, and
 asking for less enlargement does not help with the second. There are three ways to stay
 inside them. Send a `roi` — `x`, `y`, `width`, `height` as
@@ -234,15 +244,17 @@ until [ "$(echo "$JOB" | jq -r .status)" = succeeded ] || [ "$(echo "$JOB" | jq 
   JOB=$(curl -sS "https://api.craterview.ai/v1/jobs/$JOB_ID" -H "Authorization: Bearer $CV_API_KEY")
 done
 echo "$JOB" | jq -r '.status, .error // empty'
-curl -sS -f -o photo-enhanced.jpg "$(echo "$JOB" | jq -r .result.output.download_url)"
+# -OJ saves under the name the link carries, whose suffix is the format that came back.
+curl -sS -f -OJ "$(echo "$JOB" | jq -r .result.output.download_url)"
 ```
 
 What goes wrong here, in order of how often: `-d` without the JSON `Content-Type` header
 arrives form-encoded and is refused; a PUT whose `Content-Type` differs from the declared
-one is refused by storage, with an error that does not mention CraterView; `wait` above 30
-is a 422 rather than a longer wait; and the result links expire, so fetch the file rather
-than keeping the URL. Everything else — parameters per model, prices, limits — is in the
-specification at https://api.craterview.ai/openapi.json, not in this page.
+one is refused by storage, with an error that does not mention CraterView; a `wait` longer
+than the specification allows is a 422 rather than a longer wait; and the result links
+expire, so fetch the file rather than keeping the URL. Everything else — parameters per
+model, prices, limits — is in the specification at https://api.craterview.ai/openapi.json,
+not in this page.
 
 ## Reading a job
 
@@ -255,16 +267,23 @@ specification at https://api.craterview.ai/openapi.json, not in this page.
   when it produced no file. (The Python client exposes the same three as `output_url`,
   `download_url` and `thumbnail_url` on a `Job`.)
 - `failed`: `error` is a sentence the user can act on; `error_code` is the stable identifier
-  to branch on. A failed job is not charged.
-- `credits` is what the job was billed. `eta_seconds`, present until the job settles, covers
-  the whole wait, queue included; it is a ceiling — quoted for the slowest card that might
-  take the job, then re-estimated from the worker that has it — so finishing early is the
-  normal case. `community` is true when the job is on the community queue.
+  to branch on. A failed job is not charged. **Only `inference_failed` is worth sending
+  again unchanged**: the fault was the platform's. Every other code names something about
+  the request — `result_too_large` and `input_too_large` the size (see above),
+  `format_not_accepted` a file in a format the model does not take, whatever type it was
+  uploaded as (convert it to one the model's `accepts` lists) — and the same request fails
+  the same way until that changes. A code not named here is a failure like any other.
+- `credits` is what the job was billed. `eta_seconds`, present until the job settles, is an
+  estimate of the whole wait, queue included — guidance, not a promise. It is re-estimated
+  as the job moves, and a job can finish before or after it. `community` is true when the
+  job is on the community queue.
 
-## Retries: the client does not, so the caller must do it right
+## Retries: outside `run()`, the caller's to do right
 
-Neither client retries, because only the caller knows where one logical request ends. Make
-one idempotency key per logical request and reuse it for every attempt:
+Each client's `run()` asks its submission once more under one idempotency key, and its wait
+reads on through a failure that got no answer; nothing else retries, because only the caller
+knows where one logical request ends. Around `submit()`, make one idempotency key per logical
+request and reuse it for every attempt:
 
 ```python
 from craterview import new_idempotency_key
@@ -278,7 +297,9 @@ for attempt in range(3):
 ```
 
 A fresh key per attempt starts a job per attempt and bills each. The same key with a
-different body is a 409. A `RateLimited` (429) carries `retry_after` in seconds.
+different body is a 409. A `RateLimited` (429) carries `retry_after` in seconds. A job that
+ran and failed is not this loop's to repeat: only one whose `error_code` is
+`inference_failed` is worth submitting again as it was.
 
 ## Webhooks, for anything long-running or batched
 
