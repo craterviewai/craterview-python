@@ -146,7 +146,7 @@ rather than from here. It is what was in service when the skill was written.
 
 | The user wants | Model | Parameters |
 | --- | --- | --- |
-| Sharper, larger, less noise, fewer compression artifacts — a soft scan, a small or cropped photo, a screenshot | `cv-enhance-v3` | `scale`, the enlargement, not necessarily whole; or `width` or `height` in pixels instead, the other side following the picture's proportions — one of the three |
+| Sharper, larger, less noise, fewer compression artifacts — a soft scan, a small or cropped photo, a screenshot | `cv-enhance-v3` | `scale`, the enlargement, not necessarily whole; or `width` or `height` in pixels instead, the other side following the picture's proportions — one of the three. `denoise` for a photograph with visible noise, from low light or a high ISO; its range of sizes is in its catalog description |
 | Small, blurry or distorted faces made to look natural — the people in a group photo, usually after `cv-enhance-v3` has enlarged it | `cv-faces-v1` | `seed`; only faces too small to show clearly are redrawn and the rest of the picture comes back as sent (the catalogue says how small); a picture with none fails as `no_small_face_found`, which is not charged |
 | A damaged print repaired — tears, creases, scratches, dust, faded colour | `cv-restore-v1` | `monochrome` for a black-and-white print; `context`, a sentence of what the picture cannot show — who is in it, the colour of what they wore — which the repair follows, so ask the user for it before a black-and-white photograph of people is returned in colour; `size` `standard` or `large` (larger and several times slower; the catalogue says how large); `seed` |
 | A photograph with a face turned into a professional headshot | `cv-headshot-v1` | `attire` `business` (a dark jacket over a plain shirt), `as-is` (keeps what they are wearing) or `starship-captain` (a starship uniform on a starship's bridge, with pointed ears); `seed` |
@@ -198,7 +198,8 @@ at submit, failed before the model runs, and not charged. The catalog publishes 
 for the key in use; divide it by the square of the scale to get the largest frame that may
 be sent. Some models are also bounded by how much of a picture they work on at once,
 whatever the scale: the catalog's `max_input_megapixels`, which fails the same way as
-`input_too_large`. The largest frame that may be sent is then the smaller of the two, and
+`input_too_large`. With `denoise` sent as true it is the catalog's
+`max_denoise_input_megapixels` instead. The largest frame that may be sent is then the smaller of the two, and
 asking for less enlargement does not help with the second. There are three ways to stay
 inside them. Send a `roi` — `x`, `y`, `width`, `height` as
 fractions of the image you upload, origin top left — and the platform cuts that region

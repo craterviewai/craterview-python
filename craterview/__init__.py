@@ -371,6 +371,11 @@ class Job:
     counting time spent waiting for a GPU as well as time spent on one. An estimate and never
     a promise — read it as guidance, not a deadline. Absent once a job has settled.
 
+    `progress` is how far a running job has got: `{"stage": ..., "fraction": ...}`, the stage
+    one of `starting`, `processing` or `saving`, and the fraction roughly how much of the run
+    is done — an estimate, never reaching 1 before the job finishes, and None when no estimate
+    holds. Absent while the job is queued and once it has settled.
+
     `thumbnail_url` is a small JPEG of the job's picture — the result, or the image the model
     worked from when it produced no file — for showing a page of jobs without downloading a
     page of full-size pictures. `input_url` is the picture the model worked
@@ -419,6 +424,7 @@ class Job:
     # charge rather than arriving as a fraction.
     credits: int | None = None
     eta_seconds: float | None = None
+    progress: dict | None = None
     community: bool = False
     # Whether an automated check thought this job's images may fall outside what the service
     # allows: the part of your image the job worked on (all of it, unless you named a
