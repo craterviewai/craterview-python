@@ -130,13 +130,13 @@ the same job.
 ## Errors
 
 Everything raised by this client descends from `CraterViewError`, so one `except` catches
-the lot. `.status` carries the HTTP status where there was one, and `.trace_id` the API's
+the lot. `.status` carries the HTTP status where there was one, `.code` the API's stable name for a refusal — branch on it, not on the message — and `.trace_id` the API's
 `X-Trace-Id` for a request it answered and refused — the id to quote when you ask us about
 it. `.job_id` names the job an error is about, where there is one.
 
 | Exception | Meaning |
 |---|---|
-| `RateLimited` | 429 — one of five limits, and the message says which: the key's request rate, the account's upload URLs a minute, the account's new keys an hour, the account's jobs in flight, or a full queue. `.retry_after` is seconds to wait: until the window rolls over for the two per-minute limits, until a new key can be made for the hourly one, or an interval to poll on for the other two. |
+| `RateLimited` | 429 — one of five limits, and `.code` says which: `rate_limited` (the key's request rate), `too_many_uploads`, `too_many_keys`, `too_many_jobs` or `queue_full`. `.retry_after` is seconds to wait: until the window rolls over for the two per-minute limits, until a new key can be made for the hourly one, or an interval to poll on for the other two. |
 | `JobFailed` | The job ran and did not succeed. `.args[0]` says what you can do about it; `.error_code` is the half to branch on; `.job_id` is the job. |
 | `ConnectionFailed` | The request never reached the API or storage: refused, reset, or a name that would not resolve. Also a builtin `ConnectionError`. Safe to repeat with the same idempotency key. |
 | `TimedOut` | No answer within the client's `timeout`. Also a builtin `TimeoutError`. The request may have arrived, so repeat a submission with the same idempotency key, never a new one. From `run()`, which uploads afresh each time, look for the job in `jobs()` instead. |
@@ -155,7 +155,7 @@ Every field the API publishes on a job is exposed here.
 | `succeeded`, `done` | `done` covers both terminal states |
 | `error` | Set when the job failed. Safe to show a user |
 | `error_code` | The same fact, as a stable identifier. Branch on this, show the other |
-| `credits` | **What you were billed** |
+| `credits` | **What you were billed.** Nothing past your balance is collected |
 | `eta_seconds` | Seconds until the job is expected to finish, recomputed on every read — it counts down while the job runs. Absent once the job has settled. Estimated for your image's size when `upload()` could read it — its header is read with Pillow, nothing is decoded — or when you pass `input_megapixels` to `submit()`; for a typical image otherwise |
 | `community` | True when the job is on the community queue, which runs on shared, free capacity and can wait longer at busy times |
 | `output_url`, `download_url` | The result, presigned. One to display, one to save |
@@ -183,9 +183,9 @@ which is what makes it impossible to get wrong.
 **Running out of credit does not stop you.** A job submitted against a balance of zero is
 accepted and run, and charged when it succeeds — it goes to the community queue, which runs
 on shared, free capacity and can wait longer at busy times. It comes back with `community`
-set. There is no payment error to handle: paying — with credit, or with a subscription —
-moves work onto paid compute that scales with demand, rather than buying the right to
-submit.
+set, and `usage()` reports the same flag for your next job before you send it. There is no
+payment error to handle: paying — with credit, or with a subscription — moves work onto paid
+compute that scales with demand, rather than buying the right to submit.
 `eta_seconds` covers the whole wait, queue time included, so a community job simply
 reports a longer one.
 
@@ -197,20 +197,24 @@ fetch the result rather than storing the link.
 page of jobs costs kilobytes, and the picture the model worked from so a result can be
 shown against it. Where you named a region, `input_url` is that region — so a before-and-after
 is a true pair, and what was used is something you can look at rather than something to take
-on trust. It is not the file you uploaded: yours stays yours and is removed on its own
-schedule. Both expire with the job's other pictures. A model that produces no file has no
-result to preview, so `thumbnail_url` is a preview of the picture it answered about.
+on trust. It is not the file you uploaded but a new one written from it, not copied —
+so do not expect a hash of it to match your file's, and a JPEG or WebP is compressed
+again. Yours is removed on its own schedule. Both expire with the job's other pictures. A
+model that produces no file has no result to preview, so `thumbnail_url` is a preview of the
+picture it answered about.
 
 ## Webhooks
 
 Pass `webhook_url` on submit — an absolute `http` or `https` URL, refused at submit if it is
 not one — and we `POST` to it once the job settles. Verify every delivery before you act on
-it: anyone who learns your URL can send you a plausible-looking body.
+it: anyone who learns your URL can send you a plausible-looking body. Retries stop within a
+minute; to find a delivery that never arrived, keep the ids of jobs you submitted and have not
+heard about, and read each with `cv.job(id)`.
 
 ```python
 from craterview import CraterView, verify_webhook, InvalidSignature
 
-secret = CraterView(api_key="cv_...").webhook_secret()   # created the first time you ask
+secret = CraterView(api_key="cv_...").webhook_secret()   # the same one every delivery is signed with
 
 @app.post("/hooks/craterview")
 def hook(request):
@@ -271,7 +275,7 @@ old one. You cannot revoke the key you are calling with.
 cv.models()                       # models, what each takes and answers with, and which queue you are on
 cv.jobs(limit=50, status="succeeded")   # your history, newest first, paging transparently
 cv.job("job_...")                 # one job by id
-cv.usage()                        # credit balance, spend and job counts
+cv.usage()                        # credit balance, next job's queue, spend and job counts
 ```
 
 `jobs()` is a generator and pages for you. `limit` is how many jobs one request fetches, not

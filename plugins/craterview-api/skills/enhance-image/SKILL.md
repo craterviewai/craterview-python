@@ -147,6 +147,7 @@ rather than from here. It is what was in service when the skill was written.
 | The user wants | Model | Parameters |
 | --- | --- | --- |
 | Sharper, larger, less noise, fewer compression artifacts — a soft scan, a small or cropped photo, a screenshot | `cv-enhance-v3` | `scale`, the enlargement, not necessarily whole; or `width` or `height` in pixels instead, the other side following the picture's proportions — one of the three. `denoise` for a photograph with visible noise, from low light or a high ISO; its range of sizes is in its catalog description |
+| Grain taken out of a photograph from low light or a high ISO, at its own size rather than enlarged | `cv-denoise-v1` | `tiled` to have the image, or the part named with `roi`, worked on at its own resolution and returned at its own size; without it, anything larger than the working area the catalogue states comes back reduced to about that size, so naming a smaller part keeps more of it; how large a tiled picture may be is in the catalogue; `seed` |
 | Small, blurry or distorted faces made to look natural — the people in a group photo, usually after `cv-enhance-v3` has enlarged it | `cv-faces-v1` | `seed`; only faces too small to show clearly are redrawn and the rest of the picture comes back as sent (the catalogue says how small); a picture with none fails as `no_small_face_found`, which is not charged |
 | A damaged print repaired — tears, creases, scratches, dust, faded colour | `cv-restore-v1` | `monochrome` for a black-and-white print; `context`, a sentence of what the picture cannot show — who is in it, the colour of what they wore — which the repair follows, so ask the user for it before a black-and-white photograph of people is returned in colour; `size` `standard` or `large` (larger and several times slower; the catalogue says how large); `seed` |
 | A photograph with a face turned into a professional headshot | `cv-headshot-v1` | `attire` `business` (a dark jacket over a plain shirt), `as-is` (keeps what they are wearing) or `starship-captain` (a starship uniform on a starship's bridge, with pointed ears); `seed` |
@@ -164,9 +165,9 @@ came back. Bit depth and colour are returned as they were sent, so a 16-bit PNG 
 The catalogue is the authority on all of this — read it rather than relying on this paragraph.
 
 Each model refuses a parameter it does not publish — a `scale` sent to `cv-restore-v1` is a
-422, not a no-op. `cv-restore-v1` and `cv-headshot-v1` rebuild a face as a close likeness
-rather than the original pixels, and `cv-faces-v1` draws a small face to fit rather than
-recovering it, so keep the source. Stills only; video is not yet in service.
+422, not a no-op. `cv-restore-v1`, `cv-headshot-v1` and `cv-denoise-v1` rebuild a face as a
+close likeness rather than the original pixels, and `cv-faces-v1` draws a small face to fit
+rather than recovering it, so keep the source. Stills only; video is not yet in service.
 
 ## The explicit path
 
@@ -174,7 +175,7 @@ When the caller wants to hold the key, submit later, fan out, or not block:
 
 ```python
 input_key = cv.upload("photo.jpg")                       # → "inputs/..."
-job = cv.submit("cv-enhance-v3", input_key, scale=4)     # 202, status queued
+job = cv.submit("cv-enhance-v3", input_key, scale=4)     # 201, status queued
 job = cv.wait_for(job, timeout=600)                       # or: cv.job(job.id) yourself
 data = job.bytes()
 ```
@@ -215,8 +216,8 @@ problem with nothing in the way. The same three calls, with `CV_API_KEY` in the 
 and `jq` for the fields the next step needs:
 
 ```bash
-# 1 — ask for somewhere to put the file. content_length is required and is signed into
-#     the URL that comes back, as is the content type.
+# 1 — ask for somewhere to put the file. content_type and content_length are required,
+#     and both are signed into the URL that comes back.
 LEN=$(wc -c < photo.jpg)
 SLOT=$(curl -sS -X POST "https://api.craterview.ai/v1/uploads" \
   -H "Authorization: Bearer $CV_API_KEY" \
@@ -251,9 +252,13 @@ curl -sS -f -OJ "$(echo "$JOB" | jq -r .result.output.download_url)"
 
 What goes wrong here, in order of how often: `-d` without the JSON `Content-Type` header
 arrives form-encoded and is refused; a PUT whose `Content-Type` differs from the declared
-one is refused by storage, with an error that does not mention CraterView; a `wait` longer
+one is refused by storage, with an error that does not mention CraterView; an
+`Authorization` header on the upload or on a result link — the API key, sent because the
+client adds it to every request — is refused by storage with `400` and
+`Missing x-amz-content-sha256`, because those links are signed already; a `wait` longer
 than the specification allows is a 422 rather than a longer wait; and the result links
-expire, so fetch the file rather than keeping the URL. Everything else — parameters per
+expire, so fetch the file rather than keeping the URL. A refusal is
+`{"detail", "code"}`: branch on `code`, which is stable, never on the sentence. Everything else — parameters per
 model, prices, limits — is in the specification at https://api.craterview.ai/openapi.json,
 not in this page.
 
@@ -274,9 +279,10 @@ not in this page.
   `format_not_accepted` a file in a format the model does not take, whatever type it was
   uploaded as (convert it to one the model's `accepts` lists) — and the same request fails
   the same way until that changes. A code not named here is a failure like any other.
-- `credits` is what the job was billed. `eta_seconds`, present until the job settles, is an
-  estimate of the whole wait, queue included — guidance, not a promise. It is re-estimated
-  as the job moves, and a job can finish before or after it. `community` is true when the
+- `credits` is what the job was billed; nothing past the balance is collected.
+  `eta_seconds`, present until the job settles, is an estimate of the whole wait, queue
+  included — guidance, not a promise. It is re-estimated as the job moves, and a job can
+  finish before or after it. `community` is true when the
   job is on the community queue.
 
 ## Retries: outside `run()`, the caller's to do right
@@ -313,4 +319,8 @@ using the **raw request bytes**, not re-serialized JSON. Deliveries are at-least
 
 Each completed job charges the credits its model publishes. Before running a batch, read
 `cv.models()` for the price and `cv.usage()` for the balance, say what it will cost, and do
-not submit until the user agrees. Never resubmit a job that is `queued` or `running`; poll it.
+not submit until the user agrees. A balance smaller than the cost, zero included, is not a
+reason to stop or to tell the user they need credit: nothing past the balance is collected,
+and an account that is not paying still runs its jobs, on the community queue, which is free
+and can wait longer at busy times. `community` in `cv.usage()` says which queue the next job
+enters; say that beside the cost. Never resubmit a job that is `queued` or `running`; poll it.

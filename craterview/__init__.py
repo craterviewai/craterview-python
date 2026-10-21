@@ -92,7 +92,9 @@ def new_idempotency_key() -> str:
 class CraterViewError(RuntimeError):
     """Base class, so callers can catch everything from this client with one except.
 
-    `status` is the HTTP status where there was one. `trace_id` is the API's `X-Trace-Id` for
+    `status` is the HTTP status where there was one, and `code` the API's stable name for a
+    refusal: branch on `code`, not on the message, and handle one you do not know by its
+    status. `trace_id` is the API's `X-Trace-Id` for
     a request it answered and refused — the id to quote when asking about it. None when the
     API never answered, or when the refusal came from storage.
 
@@ -102,11 +104,13 @@ class CraterViewError(RuntimeError):
     """
 
     def __init__(self, message: str, status: int | None = None,
-                 trace_id: str | None = None, *, job_id: str | None = None):
+                 trace_id: str | None = None, *, job_id: str | None = None,
+                 code: str | None = None):
         super().__init__(message)
         self.status = status
         self.trace_id = trace_id
         self.job_id = job_id
+        self.code = code
 
 
 class ConnectionFailed(CraterViewError, ConnectionError):
@@ -181,9 +185,20 @@ def _sent(call, *args, **kwargs) -> requests.Response:
         raise CraterViewError(str(failure)) from failure
 
 
+def _code(resp: requests.Response) -> str | None:
+    """The API's code for a refusal, or None for an answer that is not the API's."""
+    try:
+        body = resp.json()
+    except ValueError:
+        return None
+    code = body.get("code") if isinstance(body, dict) else None
+    return code if isinstance(code, str) else None
+
+
 class RateLimited(CraterViewError):
     """429 — too fast, or too much at once. Five different limits answer with this, and
-    the message says which.
+    `code` says which: `rate_limited`, `too_many_keys`, `too_many_uploads`, `too_many_jobs`
+    or `queue_full`, in the order below.
 
     - The key's request rate, per minute.
     - The account's new keys, per hour — counted across all its keys, and only from
@@ -203,8 +218,8 @@ class RateLimited(CraterViewError):
     """
 
     def __init__(self, message: str, retry_after: float | None = None,
-                 trace_id: str | None = None):
-        super().__init__(message, 429, trace_id)
+                 trace_id: str | None = None, *, code: str | None = None):
+        super().__init__(message, 429, trace_id, code=code)
         self.retry_after = retry_after
 
 
@@ -356,6 +371,8 @@ class Job:
     """A submitted job. Mirrors the API's job representation field for field.
 
     `credits` is what you were billed, and it is the only figure about cost the API states.
+    What your balance does not cover is never collected: it is written off when credit next
+    arrives or a subscription renews.
     For how long a job took, `finished_at` minus `created_at` is the wait you actually had,
     queue included — both are here and both are on the webhook, which states the same fields
     by the same names.
@@ -381,14 +398,16 @@ class Job:
     page of full-size pictures. `input_url` is the picture the model worked
     from, so a result can be shown against it — and where you named a region, it is that
     region, so what was used is something you can look at rather than something to take on
-    trust. It is not the file you uploaded: yours stays yours and is removed on its own
-    schedule. Both expire with the job's other pictures.
+    trust. It is not the file you uploaded but a new one written from it, not copied — so
+    do not expect a hash of it to match your file's, and a JPEG or WebP is compressed
+    again. Yours is removed on its own schedule. Both expire with the job's other pictures.
 
-    `community` says the job was submitted by an account that was not paying — no credit
-    and no subscription — and is on the community queue, which runs on shared, free
-    capacity: it waits longer at busy times, and never stops. An empty balance is never itself
-    a reason to refuse a job — paying moves work onto paid compute that scales with demand,
-    not the right to submit — but on some models the community queue takes smaller files.
+    `community` says the job was submitted by an account that was not paying — no credit,
+    and no subscription with work left this period — and is on the community queue, which
+    runs on shared, free capacity: it waits longer at busy times, and never stops. An empty
+    balance is never itself a reason to refuse a job — paying moves work onto paid compute
+    that scales with demand, not the right to submit — but on some models the community
+    queue takes smaller files.
     `models()` lists each model's limits for your key, and a file over them is refused with
     the limit named.
     """
@@ -469,10 +488,11 @@ class Job:
     def input_url(self) -> str | None:
         """The picture the model worked from, which is the region where you named one.
 
-        Not the file you uploaded — that one is yours and goes on its own schedule. This is
-        what went into the model, so a before-and-after is a true pair. None for a job that
-        has not finished. A model that answers about a picture rather than producing one has
-        it too: it is the picture that answer is about.
+        Not the file you uploaded but a new one written from it, not copied — so do not
+        expect a hash of it to match your file's, and a JPEG or WebP is compressed again. Yours
+        goes on its own schedule. This is what went into the model, so a before-and-after is a
+        true pair. None for a job that has not finished. A model that answers about a picture
+        rather than producing one has it too: it is the picture that answer is about.
         """
         given = (self.result or {}).get("input")
         return given.get("url") if isinstance(given, dict) else None
@@ -583,9 +603,10 @@ class CraterView:
         if resp.status_code == 429:
             raise RateLimited(self._detail(resp),
                               retry_after=float(resp.headers.get("Retry-After", 0) or 0),
-                              trace_id=trace_id)
+                              trace_id=trace_id, code=_code(resp))
         if resp.status_code >= 400:
-            raise CraterViewError(self._detail(resp), resp.status_code, trace_id)
+            raise CraterViewError(self._detail(resp), resp.status_code, trace_id,
+                                  code=_code(resp))
         # A 204 carries no body, so asking for JSON raises on a call that succeeded. Checked
         # by status rather than by looking for an empty body: this is the only response the
         # API sends without one, and a status is a fact rather than an inference.
@@ -739,7 +760,7 @@ class CraterView:
         return Job._from(self._request("GET", f"/v1/jobs/{_issued('job', job_id, 'job_id')}"),
                          self)
 
-    def jobs(self, limit: int = 50, status: str | None = None) -> Iterator[Job]:
+    def jobs(self, limit: int = 50) -> Iterator[Job]:
         """Iterate the account's job history, newest first, paging transparently.
 
         Scoped to the account rather than to this key, so a key sees every job the account
@@ -752,8 +773,6 @@ class CraterView:
         before = None
         while True:
             query = f"/v1/jobs?limit={min(limit, MAX_PAGE)}"
-            if status:
-                query += f"&status={status}"
             if before:
                 query += f"&before={before}"
             page = self._request("GET", query)
@@ -775,16 +794,19 @@ class CraterView:
         A job is charged when it succeeds, so queued and running work is not in the
         figures yet, and a failed job costs nothing.
 
-        `credits_remaining` is always a number, floored at zero. `jobs_in_flight` and
-        `max_jobs_in_flight` are the state of the queue and are what a 429 on submit is
-        about.
+        `credits_remaining` is always a number, floored at zero. A balance of zero never
+        stops a submission: `community` says whether your next job runs on the community
+        queue, which is free and can wait longer at busy times, or on paid compute.
+        `jobs_in_flight` and `max_jobs_in_flight` are the state of the queue and are what a
+        429 on submit is about.
 
         Account-wide, so every key on an account reports the same figures.
         """
         return self._request("GET", "/v1/usage")
 
     def webhook_secret(self) -> str:
-        """The secret your callbacks are signed with, created the first time you ask.
+        """The secret your callbacks are signed with, created the first time you ask or with
+        your first delivery, whichever comes first.
 
         Pass it to `verify_webhook`. Unlike an API key this can be read back whenever you
         need it — but treat it as a credential all the same: anyone holding it can produce a
