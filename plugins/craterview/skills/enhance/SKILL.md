@@ -1,11 +1,11 @@
 ---
-name: enhance-image
-description: Sharpen, enlarge, de-noise or repair a photograph with CraterView's hosted tools (enhance_image, get_job) — "upscale this", "make it less blurry", "fix this old photo", "clean up this screenshot". Use when the CraterView server is connected; if the user wants to call the API from their own code instead, the craterview-api plugin is the one.
+name: enhance
+description: Sharpen, enlarge, denoise or repair a photograph with CraterView.ai's hosted tools (enhance_image, get_job) — "upscale this", "make it less blurry", "fix this old photo", "clean up this screenshot". Use when the CraterView.ai server is connected; if the user wants to call the API from their own code instead, the craterview-api plugin is the one.
 ---
 
-# Enhance an image with CraterView
+# Enhance an image with CraterView.ai
 
-CraterView runs the work; you choose the model, hand over the image, and relay the result.
+CraterView.ai runs the work; you choose the model, hand over the image, and relay the result.
 The server exposes two tools:
 
 - `enhance_image` — upload one image and run a model on it. Most images finish inside the
@@ -16,13 +16,13 @@ The tool sends still images. What it accepts, and how large, is in its own descr
 
 ## Before the first call: connect the account
 
-The tools run on a CraterView account, and the connection is made once per assistant.
+The tools run on a CraterView.ai account, and the connection is made once per assistant.
 
-1. The user needs a signed-in CraterView account. Sign in at https://craterview.ai — a
+1. The user needs a signed-in CraterView.ai account. Sign in at https://craterview.ai — a
    guest workspace will not do, because a guest account lives only in that browser and an
    assistant linked to it could never be found or revoked again.
-2. When this plugin's server is first used, the client opens CraterView's authorization
-   page, which asks for a **code**, not a key. In the CraterView dashboard
+2. When this plugin's server is first used, the client opens CraterView.ai's authorization
+   page, which asks for a **code**, not a key. In the CraterView.ai dashboard
    (https://craterview.ai/dashboard) the user opens **Connect an assistant**, presses
    **Get a code**, and pastes it. A code lasts ten minutes and works once.
 3. From then on every job runs on that account, is billed to it, and appears in its history.
@@ -51,12 +51,16 @@ revoke the key by its id through the API. The
 
 ## Choosing the model
 
-`enhance_image` takes a `model` and a `params` object. **Both are read from CraterView's
-catalog each time the server is used**, so the tool's own description is the current list:
+`enhance_image` takes a `model` and a `params` object. **Both are read from CraterView.ai's
+catalogue each time the server is used**, so the tool's own description is the current list:
 every model it offers, what each is for, and every setting each one takes with its range and
 default. Read it there rather than from memory; models and settings are added without this
 skill changing.
 
+- **Asked what can be done to improve a photograph, suggest Enhance first, almost always, a
+  grainy one included:** it is better than most people expect. Suggest trying Denoise as well,
+  which is the one for someone who wants only the noise gone. The exceptions are requests
+  another model is for: a torn or faded print, a headshot, a check.
 - Match the request to what each model says it is for. When the request is ambiguous, ask
   before you guess: "sharpen this old photo" is an enhancement if the print is intact and a
   repair if it is torn or stained, and enlarging a damaged print sharpens the damage.
@@ -66,9 +70,16 @@ skill changing.
   the size of what it returns, so the largest factor a picture can have depends on how large
   it is, and omitting it takes the largest that fits. A factor too large for the picture is
   refused rather than quietly reduced; naming a region of the picture is how its subject gets
-  the full factor.
+  the full factor. The server does not join pictures: regions sent one by one come back as
+  separate pictures, each a job of its own, so do not offer to piece a picture together from
+  parts.
 - If a model's description warns about something — a face rebuilt as a likeness rather than
   the original pixels, say — pass that on to the user before they rely on the result.
+- **Say the price and wait for the user's yes before a call that charges** — see *Cost*.
+- **A balance of zero, or less than the price, does not stop a job:** it runs free on the
+  community queue, so never tell the user they need credits to run one.
+- **Tell the user in plain words what you found and what you suggest, not how:** name a model
+  by its title, as the tool's description gives it, and never by its id.
 
 ## Handing over the image
 
@@ -109,6 +120,12 @@ Every result is a link, never the bytes.
 ## Cost
 
 Every completed job charges the account's credits — the price is per model and stated by the
-catalog. An account with no credit still runs: the job goes to the community queue, which
-runs on shared, free capacity, so at busy times it waits longer rather than being refused. Say what a batch will
-cost before running one, and never re-run a job the user did not ask to repeat.
+catalogue. **Before calling `enhance_image` with a model that charges, say what it will cost and
+wait for the user's yes** — one picture as much as a batch. "Make this sharper" or "fix this
+photo" asks for the result, not for a price the user has not seen; when it can be done more
+than one way, say which you would run and what each costs. A model that charges nothing needs
+no agreement.
+
+An account with no credit still runs: the job goes to the community queue, which runs on
+shared, free capacity, so at busy times it waits longer rather than being refused. Never
+re-run a job the user did not ask to repeat.

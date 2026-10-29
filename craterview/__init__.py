@@ -667,7 +667,14 @@ class CraterView:
         video, which is why `accepts` names no clip for it yet.
 
         `tenure` says what kind of model it is: `fixed` is a lasting part of the service,
-        and `comet` is a utility or fun experiment.
+        and `comet` is a utility or fun experiment. `test_model` marks a model for testing
+        an integration rather than for use — `echo`, free, returning a result of the right
+        size without improving the picture. CraterView's apps do not offer it; an app built
+        on this catalog should leave it out too.
+
+        In the limits, a limit is a positive number, or null where nothing bounds that axis
+        for your key — for a setting's own limits (`max_input_megapixels_by_binning`), also
+        where the model has no such setting. A limit is never 0.
         """
         return self._request("GET", "/v1/models")
 
@@ -794,7 +801,9 @@ class CraterView:
         A job is charged when it succeeds, so queued and running work is not in the
         figures yet, and a failed job costs nothing.
 
-        `credits_remaining` is always a number, floored at zero. A balance of zero never
+        The balance is `credits_remaining`; `credits_spent` is what the account has spent,
+        all time, and `credits_granted` what it has been given. `credits_remaining` is
+        always a number, floored at zero. A balance of zero never
         stops a submission: `community` says whether your next job runs on the community
         queue, which is free and can wait longer at busy times, or on paid compute.
         `jobs_in_flight` and `max_jobs_in_flight` are the state of the queue and are what a

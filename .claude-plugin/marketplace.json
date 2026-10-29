@@ -1,19 +1,19 @@
 {
   "name": "craterviewai",
   "owner": {
-    "name": "CraterView",
+    "name": "CraterView.ai",
     "url": "https://craterview.ai"
   },
   "metadata": {
-    "description": "CraterView image enhancement and restoration for Claude Code: one plugin that connects the hosted tools, one that teaches the API.",
+    "description": "CraterView.ai image enhancement and restoration for Claude Code: one plugin that connects the hosted tools, one that teaches the API.",
     "version": "0.1.0"
   },
   "plugins": [
     {
       "name": "craterview",
       "source": "./plugins/craterview",
-      "description": "Enhance, enlarge and restore photographs from the conversation, through CraterView's hosted tools. Connects the server for you; no key to handle.",
-      "version": "0.1.4",
+      "description": "Enhance, enlarge and restore photographs from the conversation, through CraterView.ai's hosted tools. Connects the server for you; no key to handle.",
+      "version": "0.1.5",
       "category": "productivity",
       "keywords": ["image", "upscale", "enhance", "restore", "photo", "mcp"],
       "homepage": "https://craterview.ai"
@@ -21,8 +21,8 @@
     {
       "name": "craterview-api",
       "source": "./plugins/craterview-api",
-      "description": "Call the CraterView API from code: the Python and TypeScript clients, the upload, submit and collect flow, retries, webhooks, and how to get a key.",
-      "version": "0.1.12",
+      "description": "Call the CraterView.ai API from code: the Python and TypeScript clients, the upload, submit and collect flow, retries, webhooks, and how to get a key.",
+      "version": "0.1.13",
       "category": "development",
       "keywords": ["image", "upscale", "enhance", "restore", "api", "sdk"],
       "homepage": "https://craterview.ai"
