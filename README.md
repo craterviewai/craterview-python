@@ -136,7 +136,7 @@ it. `.job_id` names the job an error is about, where there is one.
 
 | Exception | Meaning |
 |---|---|
-| `RateLimited` | 429 — one of five limits, and `.code` says which: `rate_limited` (the key's request rate), `too_many_uploads`, `too_many_keys`, `too_many_jobs` or `queue_full`. `.retry_after` is seconds to wait: until the window rolls over for the two per-minute limits, until a new key can be made for the hourly one, or an interval to poll on for the other two. |
+| `RateLimited` | 429 — one of five limits, and `.code` says which: `rate_limited` (the account's request rate), `too_many_uploads`, `too_many_keys`, `too_many_jobs` or `queue_full`. `.retry_after` is seconds to wait: until the window rolls over for the two per-minute limits, until a new key can be made for the hourly one, or an interval to poll on for the other two. |
 | `JobFailed` | The job ran and did not succeed. `.args[0]` says what you can do about it; `.error_code` is the half to branch on; `.job_id` is the job. |
 | `ConnectionFailed` | The request never reached the API or storage: refused, reset, or a name that would not resolve. Also a builtin `ConnectionError`. Safe to repeat with the same idempotency key. |
 | `TimedOut` | No answer within the client's `timeout`. Also a builtin `TimeoutError`. The request may have arrived, so repeat a submission with the same idempotency key, never a new one. From `run()`, which uploads afresh each time, look for the job in `jobs()` instead. |
@@ -171,8 +171,9 @@ states those links once. A model with no file to hand back returns its answer in
 leaves every one of them null; the fields it answers with are its `result_schema` in
 `cv.models()`.
 
-`credits` is the only figure about cost the API states, and the price is fixed and published
-per model, so an invoice reconciles against `credits` alone. For how long a job took, subtract
+`credits` is the only figure about cost the API states, and each model publishes its price in
+`cv.models()` — `credits_per_image`, and `credit_steps` where a smaller image costs less — so
+an invoice reconciles against `credits` alone. For how long a job took, subtract
 `created_at` from `finished_at` — that is the wait you had, queue included.
 
 **Uploads declare their size.** `upload()` and `run()` measure the bytes they are about
@@ -181,8 +182,8 @@ exactly that length and nothing else. You do not pass it — it is read off the 
 which is what makes it impossible to get wrong.
 
 **Running out of credit does not stop you.** A job submitted against a balance of zero is
-accepted and run, and charged when it succeeds — it goes to the community queue, which runs
-on shared, free capacity and can wait longer at busy times. It comes back with `community`
+accepted, and unless a subscription has work left this period it runs free on the community
+queue, which runs on shared, free capacity and can wait longer at busy times. It comes back with `community`
 set, and `usage()` reports the same flag for your next job before you send it. There is no
 payment error to handle: paying — with credit, or with a subscription — moves work onto paid
 compute that scales with demand, rather than buying the right to submit.

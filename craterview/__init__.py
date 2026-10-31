@@ -200,7 +200,8 @@ class RateLimited(CraterViewError):
     `code` says which: `rate_limited`, `too_many_keys`, `too_many_uploads`, `too_many_jobs`
     or `queue_full`, in the order below.
 
-    - The key's request rate, per minute.
+    - The account's request rate, per minute — counted across all its keys, for
+      submitting jobs, creating keys and gallery calls. No other call counts.
     - The account's new keys, per hour — counted across all its keys, and only from
       `create_key`.
     - The account's upload URLs, per minute — counted across all its keys.

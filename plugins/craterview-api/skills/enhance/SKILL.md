@@ -57,14 +57,19 @@ const cv = new CraterView({ apiKey: process.env.CV_API_KEY });
 A key carries the account's whole allowance and does not expire, so it belongs server-side:
 never in a browser bundle, a commit, or a notebook cell that gets saved.
 
-**Before you run a job that costs credits, say what it will cost and wait for the user's
-yes** — one job as much as a batch. A request to improve a picture asks for the result, not
-for a price the user has not seen. *Cost and courtesy*, at the end of this file, says where
-the price and the queue are read; a model that costs nothing needs no agreement. Code you
-write for the user to run is held to the same rule: tell them what it will cost when it runs.
-**A balance of zero, or less than the price, does not stop a job:** it runs free on the
-community queue, which can wait longer at busy times, so never tell the user they need credits
-to run one.
+**The user makes the run call.** Submit a job only when the user has said to run it: every
+job, one as much as a batch, a free one and one on the community queue alike. "Make this
+sharper" asks for a result, not for the run. Say which model and settings you would use,
+which queue the job will enter and what it will cost there, which is nothing on the community
+queue; *Cost and courtesy*, at the end of this file, says where to read them. Then wait. Code
+you write for the user is theirs to run: tell them what it will cost when it runs. A script
+that submits a batch leaves the run call to whoever runs it: it reads the price from
+`cv.models()`, says what the whole batch will cost, and asks before its first job.
+
+**A balance of zero, or less than the price, does not stop a job:** what the balance does not
+cover is never collected, and an account that is not paying — no credit and no subscription —
+runs free on the community queue, which can wait longer at busy times. So never tell the user
+they need credits to run one.
 
 ## The one call
 
@@ -125,7 +130,8 @@ It needs `craterview>=0.4.18` installed and `CV_API_KEY` in the environment.
 ## Choosing the model
 
 `cv.models()` (`GET /v1/models`) is the authority: each model's settings with their ranges
-and descriptions, its price (`credits_per_image`), the types it accepts, its size limits and
+and descriptions, its price (`credits_per_image`, and `credit_steps` where a smaller image
+costs less), the types it accepts, its size limits and
 the queue the key would land in. This table says what each model is for and names its main
 settings. Their ranges, the prices and the size limits are the catalogue's: read them there,
 and have code read them from `cv.models()` too, rather than from here. It is what was in
@@ -259,18 +265,21 @@ history on the dashboard.
 
 ## Cost and courtesy
 
-Each completed job charges the credits its model publishes. **Before you submit a job that
-charges — one as much as a batch — read `cv.models()` for the price and `cv.usage()` for the
-balance, say what it will cost and which queue it will enter, and do not submit until the
-user agrees.** "Make this sharper" or "fix this photo" asks for the result, not for a price
-the user has not seen; when it can be done more than one way, say which you would run and
-what each costs. A model whose price is zero needs no agreement. When you write code for the
-user to run rather than running it yourself, say what it will cost when it runs. In
-`cv.usage()` the balance is `credits_remaining`; `credits_spent` is what the account has
+A completed job on paid compute charges the credits its model publishes; one on the community
+queue charges nothing. **To say what a job will cost, read `cv.models()` for the price and
+`cv.usage()` for the balance**, and say which queue it will enter. Where a model has
+`credit_steps`, an image's price is the first step its measure is at or under, and
+`credits_per_image` past the last. By `megapixels`, the measure is the part the job works on:
+the `roi` region, or the whole image, divided by 4 at `binning` 2x2, 9 at 3x3 and 16 at 4x4.
+So price a job by its region and binning, not by the file uploaded. Binning is still only for
+a noisy photograph, not a way to pay less. By `faces`, the measure is the faces redrawn, known
+only once the job finishes, so give its range. A batch of mixed sizes is priced image by
+image. When it can be done more than one way, say which you would run and what each costs.
+In `cv.usage()` the balance is `credits_remaining`; `credits_spent` is what the account has
 spent, all time.
 
 A balance smaller than the cost, zero included, is not a reason to stop or to tell the user
-they need credit: nothing past the balance is collected,
-and an account that is not paying still runs its jobs, on the community queue, which is free
-and can wait longer at busy times. `community` in `cv.usage()` says which queue the next job
-enters; say that beside the cost. Never resubmit a job that is `queued` or `running`; poll it.
+they need credit: nothing past the balance is collected, and an account that is not paying
+still runs its jobs, on the community queue, which is free and can wait longer at busy times.
+`community` in `cv.usage()` says which queue the next job enters; say that beside the cost.
+Never resubmit a job that is `queued` or `running`; poll it.

@@ -75,9 +75,15 @@ skill changing.
   parts.
 - If a model's description warns about something — a face rebuilt as a likeness rather than
   the original pixels, say — pass that on to the user before they rely on the result.
-- **Say the price and wait for the user's yes before a call that charges** — see *Cost*.
-- **A balance of zero, or less than the price, does not stop a job:** it runs free on the
-  community queue, so never tell the user they need credits to run one.
+- **The user makes the run call.** Call `enhance_image` only when the user has said to run
+  it: every call, one picture as much as a batch, a free model and the community queue
+  alike. "Make this sharper" asks for a result, not for the run. Say which model and settings
+  you would use and what the job will cost (see *Cost*), nothing for an account that is not
+  paying, and wait.
+- **A balance of zero, or less than the price, does not stop a job:** what the balance does
+  not cover is never collected, and an account that is not paying — no credit and no
+  subscription — runs free on the community queue, so never tell the user they need credits
+  to run one.
 - **Tell the user in plain words what you found and what you suggest, not how:** name a model
   by its title, as the tool's description gives it, and never by its id.
 
@@ -119,13 +125,12 @@ Every result is a link, never the bytes.
 
 ## Cost
 
-Every completed job charges the account's credits — the price is per model and stated by the
-catalogue. **Before calling `enhance_image` with a model that charges, say what it will cost and
-wait for the user's yes** — one picture as much as a batch. "Make this sharper" or "fix this
-photo" asks for the result, not for a price the user has not seen; when it can be done more
-than one way, say which you would run and what each costs. A model that charges nothing needs
-no agreement.
+A completed job on paid compute charges the account's credits — the price is per model and
+stated by the catalogue, and on some models a smaller picture costs less, as the tool's list
+of models says. Say what a job will cost before the user decides to run it, one picture as
+much as a batch; when it can be done more than one way, say which you would run and what each
+costs.
 
-An account with no credit still runs: the job goes to the community queue, which runs on
-shared, free capacity, so at busy times it waits longer rather than being refused. Never
-re-run a job the user did not ask to repeat.
+An account that is not paying still runs, and is charged nothing: the job goes to the
+community queue, which runs on shared, free capacity, so at busy times it waits longer rather
+than being refused. Never re-run a job the user did not ask to repeat.
