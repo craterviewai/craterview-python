@@ -1,7 +1,7 @@
 [project]
 name = "craterview"
-version = "0.4.31"
-description = "Python client for the CraterView.ai image enhancement API"
+version = "0.4.32"
+description = "Python client for the CraterView.ai API: AI photo upscaling, denoising, restoration, headshots and AI image detection"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
@@ -16,7 +16,9 @@ requires-python = ">=3.9"
 # pi-heif rather than pillow-heif: it is the same reader without an encoder this client would
 # never use, and it is what lets an iPhone still declare its size.
 dependencies = ["requests>=2.31", "pillow>=10.0", "pi-heif>=0.16"]
-keywords = ["upscaling", "super-resolution", "image-restoration", "api-client"]
+keywords = ["upscaling", "super-resolution", "image-restoration", "api-client", "image-upscaler",
+            "photo-enhancer", "denoising", "photo-restoration", "headshot", "ai-image-detector",
+            "content-moderation"]
 # No `License ::` classifier: PEP 639 deprecates it in favor of the SPDX expression above,
 # and setuptools rejects a build that carries both.
 classifiers = [
@@ -35,6 +37,7 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://craterview.ai"
+Features = "https://craterview.ai/features"
 Documentation = "https://api.craterview.ai/docs"
 Source = "https://github.com/craterviewai/craterview-python"
 Issues = "https://github.com/craterviewai/craterview-python/issues"
