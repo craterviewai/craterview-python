@@ -18,7 +18,7 @@ npm install craterview          # TypeScript source, one dependency — not load
 Three files beside this one hold what only some tasks need. Open one when the task
 reaches it:
 
-- `reference/keys.md`: getting a key, rotating it, and revoking one.
+- `reference/keys.md`: getting a key, replacing it, and revoking one.
 - `reference/submit-and-retry.md`: upload, submit and wait as separate steps, and
   retrying a submission without making a second job.
 - `reference/http.md`: the same calls with curl, and what goes wrong over raw HTTP.
@@ -37,11 +37,12 @@ If it is not set, walk the user through getting one rather than guessing, stubbi
 writing code that will fail at the first call. Keys begin with `cv_`.
 
 `reference/keys.md` has the steps, which end with the user running
-`export CV_API_KEY=cv_...` in their own shell, and how to rotate or revoke a key.
+`export CV_API_KEY=cv_...` in their own shell, and how to replace or revoke a key.
 
 **If the user pastes a key into the conversation anyway**, use it for the work at hand but
-say plainly that it is now in the transcript, and that the safe move is to rotate it from
-the dashboard once they are done and keep the replacement in the environment. Do not write
+say plainly that it is now in the transcript, and that the safe move is to get a new key
+once they are done, keep that one in the environment, and revoke the pasted one on the
+account page. Do not write
 a pasted key into a file, a commit, or a code example.
 
 Then read it from the environment and never inline it:

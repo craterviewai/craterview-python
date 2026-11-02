@@ -855,8 +855,13 @@ class CraterView:
                 return found
             before = cursor
 
-    def create_key(self, name: str = "api") -> dict:
-        """Mint another key. **The value is in this response and nowhere else.**
+    def create_key(self, name: str) -> dict:
+        """Mint another key, named for what will use it. **The value is in this response and
+        nowhere else.**
+
+        The name is required: every key on the account is listed by it, here with `keys()`
+        and on the account page, and it is how you tell one from another when you come to
+        revoke one.
 
         Keys are stored as hashes, so one that is not written down has to be replaced rather
         than recovered. Several keys on an account is the ordinary arrangement — one per

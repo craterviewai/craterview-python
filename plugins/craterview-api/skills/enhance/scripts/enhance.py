@@ -72,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
     key = os.environ.get("CV_API_KEY")
     if not key:
         return _fail("CV_API_KEY is not set. Sign in at https://craterview.ai, open the "
-                     "dashboard's Developer API panel, Show my API key, and export it.")
+                     "dashboard's Developer API panel, press Get a key, and export it.")
     if not args.image.is_file():
         return _fail(f"{args.image} is not a file")
 

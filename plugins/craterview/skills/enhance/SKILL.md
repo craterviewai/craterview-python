@@ -25,10 +25,13 @@ The tools run on a CraterView.ai account, and the connection is made once per as
    page, which asks for a **code**, not a key. In the CraterView.ai dashboard
    (https://craterview.ai/dashboard) the user opens **Connect an assistant**, presses
    **Get a code**, and pastes it. A code lasts ten minutes and works once.
+   The code goes into that page and nowhere else: whoever enters it first connects their
+   own assistant to the account. Never ask the user for the code, and never send one
+   anywhere yourself.
 3. From then on every job runs on that account, is billed to it, and appears in its history.
 
-If a tool call fails saying the connection's key was revoked or replaced, the user rotated
-their API key or the account was suspended. **Sign the server in again** rather than
+If a tool call fails saying the connection's key was revoked or replaced, the user revoked
+this assistant's key on their account page or the account was suspended. **Sign the server in again** rather than
 retrying — a plain reconnect keeps the key that stopped working. In Claude Code: `/mcp`,
 choose the server, clear its authentication, then authenticate again and paste a fresh code
 from the dashboard.
@@ -37,17 +40,13 @@ In Claude Code, `/mcp` shows the server's status and starts the authorization if
 happened. Any other MCP client connects the same way by adding
 `https://mcp.craterview.ai/mcp` as a server.
 
-**No API key is involved in this path**, and that is the point of it: nothing worth stealing
-is ever on screen. If the user wants a key — to call the API from their own code, a script or
-a server — it is on the same dashboard under **Developer API**: **Show my API key**, then
-**Copy**. Keys begin with `cv_`. Each sign-in in a browser is given a key of its own, and an
-assistant linked from it holds that key. Rotating it from that browser's dashboard, while it
-is still signed in, replaces it immediately and disconnects every assistant linked from it,
-each until it is signed in again with a new code. One linked from another browser keeps
-working, and so does one linked from a sign-in that has since ended: signing out leaves its
-key working and out of every dashboard's reach, and the way to cut that assistant off is to
-revoke the key by its id through the API. The
-`craterview-api` plugin is the skill for that route.
+**No API key is involved in this path**, and that is the point of it: no key is ever on
+screen. Each assistant connected this way is given a key of its own, named for it. The
+account page (https://craterview.ai/account) lists it under **API keys**, and revoking it there
+disconnects that assistant and nothing else. If the user wants a key — to call the API from
+their own code, a script or a server — it is on the dashboard under **Developer API**: they
+name it, press **Get a key**, then **Copy**. It is shown only then. Keys begin with `cv_`.
+The `craterview-api` plugin is the skill for that route.
 
 ## Choosing the model
 
