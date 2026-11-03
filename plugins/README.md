@@ -14,9 +14,10 @@ This repository is a Claude Code marketplace as well as a client, so both instal
 ## `craterview` — the hosted tools
 
 Installing it connects CraterView.ai's MCP server, so the assistant can enhance, enlarge and
-restore photographs in the conversation. The first use opens an authorization page that asks
-for a code from your CraterView.ai dashboard (**Connect an assistant** → **Get a code**). No
-API key is ever on screen. Each assistant you connect gets a key of its own, listed on your
+restore photographs in the conversation. The first use opens an authorization page,
+https://mcp.craterview.ai/authorize, that asks for a code from your CraterView.ai dashboard
+(**Connect an assistant** → **Get a code**). Paste the code there and nowhere else. No API key
+is ever on screen. Each assistant you connect gets a key of its own, listed on your
 account page under **API keys**, where revoking it disconnects that assistant.
 
 The skill, `/craterview:enhance`, says which tool to reach for, which model suits a

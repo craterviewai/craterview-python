@@ -1,15 +1,17 @@
 ---
 name: enhance
-description: Sharpen, enlarge, denoise or repair a photograph with CraterView.ai's hosted tools (enhance_image, get_job) — "upscale this", "make it less blurry", "fix this old photo", "clean up this screenshot". Use when the CraterView.ai server is connected; if the user wants to call the API from their own code instead, the craterview-api plugin is the one.
+description: Sharpen, enlarge, denoise or repair a photograph with CraterView.ai's hosted tools (enhance_image, image_enhance_quote, get_job) — "upscale this", "make it less blurry", "fix this old photo", "clean up this screenshot". Use when the CraterView.ai server is connected; if the user wants to call the API from their own code instead, the craterview-api plugin is the one.
 ---
 
 # Enhance an image with CraterView.ai
 
 CraterView.ai runs the work; you choose the model, hand over the image, and relay the result.
-The server exposes two tools:
+The server exposes three tools:
 
 - `enhance_image` — upload one image and run a model on it. Most images finish inside the
   call and return `output_url` set.
+- `image_enhance_quote` — what `enhance_image` would charge for an image, and the settings it
+  would send, without running anything.
 - `get_job` — collect a job that `enhance_image` returned as `queued` or `running`.
 
 The tool sends still images. What it accepts, and how large, is in its own description.
@@ -22,9 +24,10 @@ The tools run on a CraterView.ai account, and the connection is made once per as
    guest workspace will not do, because a guest account lives only in that browser and an
    assistant linked to it could never be found or revoked again.
 2. When this plugin's server is first used, the client opens CraterView.ai's authorization
-   page, which asks for a **code**, not a key. In the CraterView.ai dashboard
-   (https://craterview.ai/dashboard) the user opens **Connect an assistant**, presses
-   **Get a code**, and pastes it. A code lasts ten minutes and works once.
+   page, https://mcp.craterview.ai/authorize, which asks for a **code**, not a key. In the
+   CraterView.ai dashboard (https://craterview.ai/dashboard) the user opens **Connect an
+   assistant**, presses **Get a code**, and pastes it. A code lasts ten minutes and works
+   once.
    The code goes into that page and nowhere else: whoever enters it first connects their
    own assistant to the account. Never ask the user for the code, and never send one
    anywhere yourself.
@@ -78,7 +81,7 @@ skill changing.
   it: every call, one picture as much as a batch, a free model and the community queue
   alike. "Make this sharper" asks for a result, not for the run. Say which model and settings
   you would use and what the job will cost (see *Cost*), nothing for an account that is not
-  paying, and wait.
+  paying, and wait. `image_enhance_quote` runs nothing and is free: call it without asking.
 - **A balance of zero, or less than the price, does not stop a job:** what the balance does
   not cover is never collected, and an account that is not paying — no credit and no
   subscription — runs free on the community queue, so never tell the user they need credits
@@ -101,12 +104,16 @@ Give exactly one of `image_url` or `image_base64`.
 
 ## Reading the result
 
-Every result is a link, never the bytes.
+Every result is a link, with a small preview of it.
 
 - `status: succeeded` — `output_url` displays in a page, `download_url` saves under the
   job's name. **Both are presigned and expire.** Give the user the link now, or fetch the
   image if it is wanted for something further; do not store the URL as if it were permanent.
-  `get_job` mints fresh links.
+  `get_job` mints fresh links. `result_width`, `result_height`, `content_type` and `bytes`
+  describe the file, and `credits_remaining` is what the account has left.
+- **Look at the preview before you describe the result.** It shows whether the job did what
+  was asked — the framing, the colour, nothing missing — but it is too small to judge fine
+  detail, so do not claim detail from it.
 - `status: queued` or `running` — the job is still going. `eta_seconds` is the platform's
   estimate of the time left, and the note says it in words: tell the user how long to expect.
   Then call `get_job` with the `job_id`. It waits for the job before it answers, so if it
@@ -128,7 +135,11 @@ A completed job on paid compute charges the account's credits — the price is p
 stated by the catalogue, and on some models a smaller picture costs less, as the tool's list
 of models says. Say what a job will cost before the user decides to run it, one picture as
 much as a batch; when it can be done more than one way, say which you would run and what each
-costs.
+costs. `image_enhance_quote` gives the price of this picture, the settings `enhance_image` would
+send, the credits left and, for an enlargement by `scale`, the result's size in megapixels. It
+refuses what `enhance_image` would refuse at once; a `width` or `height` is checked only when
+the job runs. For an image you would send inline, give `image_width` and `image_height`
+instead of the image.
 
 An account that is not paying still runs, and is charged nothing: the job goes to the
 community queue, which runs on shared, free capacity, so at busy times it waits longer rather

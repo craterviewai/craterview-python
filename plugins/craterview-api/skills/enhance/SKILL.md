@@ -162,8 +162,9 @@ and `result.output.content_type` says which. Bit depth and colour come back as s
 
 Each model refuses a parameter it does not publish — a `scale` sent to `cv-restore-v1` is a
 422, not a no-op. `cv-restore-v1`, `cv-headshot-v1` and `cv-denoise-v1` rebuild a face as a
-close likeness rather than the original pixels, and `cv-faces-v1` draws a small face to fit
-rather than recovering it, so keep the source. Stills only; video is not yet in service.
+close likeness rather than the original pixels, `cv-faces-v1` draws a small face to fit
+rather than recovering it, and `cv-enhance-v3` makes an informed estimate of fine detail, so
+small text can come back with made-up letters and a small face as a likeness; keep the source. Stills only; video is not yet in service.
 
 ## The explicit path
 
