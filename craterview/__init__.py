@@ -880,7 +880,9 @@ class CraterView:
 
         You cannot revoke the key this client is authenticating with: it is refused with
         status 409, because it would leave you unable to make another. Create a replacement,
-        move onto it, then revoke this one.
+        move onto it, then revoke this one. A key of the CraterView.ai app on an iPhone or
+        iPad, which `keys()` marks `app`, is refused with 409 too: those end when the person
+        signs out in the app.
 
         `key_id` is a key's `id` from `keys()` or `create_key()`, never its value or its
         prefix. Anything else raises `InvalidId` without a request being made.

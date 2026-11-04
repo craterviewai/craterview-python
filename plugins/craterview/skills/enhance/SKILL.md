@@ -110,7 +110,8 @@ Every result is a link, with a small preview of it.
   job's name. **Both are presigned and expire.** Give the user the link now, or fetch the
   image if it is wanted for something further; do not store the URL as if it were permanent.
   `get_job` mints fresh links. `result_width`, `result_height`, `content_type` and `bytes`
-  describe the file, and `credits_remaining` is what the account has left.
+  describe the file. `credits_remaining` is the account's balance, not a limit: a job runs at
+  any balance.
 - **Look at the preview before you describe the result.** It shows whether the job did what
   was asked — the framing, the colour, nothing missing — but it is too small to judge fine
   detail, so do not claim detail from it.
@@ -136,7 +137,8 @@ stated by the catalogue, and on some models a smaller picture costs less, as the
 of models says. Say what a job will cost before the user decides to run it, one picture as
 much as a batch; when it can be done more than one way, say which you would run and what each
 costs. `image_enhance_quote` gives the price of this picture, the settings `enhance_image` would
-send, the credits left and, for an enlargement by `scale`, the result's size in megapixels. It
+send and, for an enlargement by `scale`, the result's size in megapixels. Its
+`credits_remaining` is the account's balance, not a limit: a job runs at any balance. It
 refuses what `enhance_image` would refuse at once; a `width` or `height` is checked only when
 the job runs. For an image you would send inline, give `image_width` and `image_height`
 instead of the image.

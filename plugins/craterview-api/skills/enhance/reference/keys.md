@@ -23,7 +23,8 @@ When `CV_API_KEY` is not set, walk the user through getting one:
 **Every key on the account is listed on the account page, https://craterview.ai/account,
 under _API keys_, and revoking one there stops it at once.** Each browser signed in, each device
 with the app, each connected assistant and each key made for code has a key of its own, named
-for what holds it, so revoking one stops that one and nothing else. To replace a key without
-downtime, get a new one, move the code onto it, then revoke the old one. From code,
-`cv.keys()` lists the same keys, `cv.create_key("staging")` makes one, and
-`cv.revoke_key(...)` ends one.
+for what holds it, so revoking one stops that one and nothing else. The iPhone and iPad app's
+keys are the exception: they cannot be revoked there or from code, and end when the user signs
+out in the app. To replace a key without downtime, get a new one, move the code onto it, then
+revoke the old one. From code, `cv.keys()` lists the same keys, `cv.create_key("staging")`
+makes one, and `cv.revoke_key(...)` ends one.
