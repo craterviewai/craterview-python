@@ -372,7 +372,7 @@ class Job:
     """A submitted job. Mirrors the API's job representation field for field.
 
     `credits` is what you were billed, and it is the only figure about cost the API states.
-    What your balance does not cover is never collected: it is written off when credit next
+    Nothing is owed for what the balance does not cover: it is written off when credit next
     arrives or a subscription renews.
     For how long a job took, `finished_at` minus `created_at` is the wait you actually had,
     queue included — both are here and both are on the webhook, which states the same fields
@@ -403,12 +403,10 @@ class Job:
     do not expect a hash of it to match your file's, and a JPEG or WebP is compressed
     again. Yours is removed on its own schedule. Both expire with the job's other pictures.
 
-    `community` says the job was submitted by an account that was not paying — no credit,
-    and no subscription with work left this period — and is on the community queue, which
-    runs on shared, free capacity: it waits longer at busy times, and never stops. An empty
-    balance is never itself a reason to refuse a job — paying moves work onto paid compute
-    that scales with demand, not the right to submit — but on some models the community
-    queue takes smaller files.
+    `community` says the job runs free on the community queue: same models, smaller size
+    limits, longer waits at busy times. A job goes there without credit or a subscription,
+    or once a limited subscription's monthly allowance is spent. A balance of zero never
+    stops a job.
     `models()` lists each model's limits for your key, and a file over them is refused with
     the limit named.
     """
@@ -506,6 +504,16 @@ class Job:
     def output_bytes(self) -> int | None:
         """The result's size. Reachable before this only by reading `result` by hand."""
         return self._output.get("bytes")
+
+    @property
+    def output_width(self) -> int | None:
+        """The result's width in pixels."""
+        return self._output.get("width")
+
+    @property
+    def output_height(self) -> int | None:
+        """The result's height in pixels."""
+        return self._output.get("height")
 
     @property
     def succeeded(self) -> bool:
@@ -648,12 +656,8 @@ class CraterView:
 
         Prices are published here, so the cost of a job is knowable before submitting it.
 
-        `community` and the limits are answered *for the queue your key would use*. The API
-        looks up the account and reports the queue a job from this key would land in — an
-        account that is paying, by holding credit or by subscribing, runs on paid compute,
-        which scales with demand, and one that is not gets the community queue,
-        on shared, free capacity. So two keys asking at the same moment
-        can get different answers, and paying changes yours.
+        `community` and the limits are for your key's next job, so two keys can get different
+        answers, and credit or a subscription changes yours.
 
         `community` here means what `Job.community` means on a submitted job. How long a
         wait will be is answered on the job, once you have one — `Job.eta_seconds`.
@@ -795,6 +799,25 @@ class CraterView:
                 return
             before = cursor
 
+    def quote(self, model: str, params: dict | None = None, *, input_width: int | None = None,
+              input_height: int | None = None) -> dict:
+        """What a job would cost and how large its result would be, without running it.
+
+        Nothing is uploaded, queued or charged. `input_width` and `input_height` are the
+        picture's size the way up a person sees it. A size a job would be refused for raises
+        with status 422, in the words the job would fail with.
+
+        The answer has `credits`, or `credits_at_most` where the price is not known yet,
+        `community` for the queue that price is for, and `result_megapixels` where `scale`
+        sizes the job.
+        """
+        body: dict = {"model": model, "params": params or {}}
+        if input_width is not None:
+            body["input_width"] = input_width
+        if input_height is not None:
+            body["input_height"] = input_height
+        return self._request("POST", "/v1/quotes", json=body)
+
     def usage(self) -> dict:
         """The account's credit balance, what it has spent, and what is in flight.
 
@@ -807,8 +830,9 @@ class CraterView:
         always a number, floored at zero. A balance of zero never
         stops a submission: `community` says whether your next job runs on the community
         queue, which is free and can wait longer at busy times, or on paid compute.
-        `jobs_in_flight` and `max_jobs_in_flight` are the state of the queue and are what a
-        429 on submit is about.
+        `subscription_allowance` is a number on a limited subscription and null on an
+        unlimited one. `jobs_in_flight` and `max_jobs_in_flight` are the state of the queue
+        and are what a 429 on submit is about.
 
         Account-wide, so every key on an account reports the same figures.
         """

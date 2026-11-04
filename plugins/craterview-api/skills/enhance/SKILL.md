@@ -64,8 +64,8 @@ sharper" asks for a result, not for the run. Say which model and settings you wo
 which queue the job will enter and what it will cost there, which is nothing on the community
 queue; *Cost and courtesy*, at the end of this file, says where to read them. Then wait. Code
 you write for the user is theirs to run: tell them what it will cost when it runs. A script
-that submits a batch leaves the run call to whoever runs it: it reads the price from
-`cv.models()`, says what the whole batch will cost, and asks before its first job.
+that submits a batch leaves the run call to whoever runs it: it reads each price from
+`cv.quote()`, says what the whole batch will cost, and asks before its first job.
 
 **A balance of zero, or less than the price, does not stop a job:** what the balance does not
 cover is never collected, and an account that is not paying — no credit and no subscription —
@@ -268,15 +268,14 @@ history on the dashboard.
 ## Cost and courtesy
 
 A completed job on paid compute charges the credits its model publishes; one on the community
-queue charges nothing. **To say what a job will cost, read `cv.models()` for the price and
-`cv.usage()` for the balance**, and say which queue it will enter. Where a model has
-`credit_steps`, an image's price is the first step its measure is at or under, and
-`credits_per_image` past the last. By `megapixels`, the measure is the part the job works on:
-the `roi` region, or the whole image, divided by 4 at `binning` 2x2, 9 at 3x3 and 16 at 4x4.
-So price a job by its region and binning, not by the file uploaded. Binning is still only for
-a noisy photograph, not a way to pay less. By `faces`, the measure is the faces redrawn, known
-only once the job finishes, so give its range. A batch of mixed sizes is priced image by
-image. When it can be done more than one way, say which you would run and what each costs.
+queue charges nothing. **To say what a job will cost, call `cv.quote()`** with the model, its
+params and the picture's size, the way up a person sees it. It runs nothing and is free, so it
+needs no asking, and it answers with the price, the queue that price is for and, where `scale`
+sizes the job, the result's size in megapixels. It refuses a size a job would be refused for.
+Over raw HTTP it is `POST /v1/quotes`. Binning lowers a price but is still only for a noisy
+photograph, not a way to pay less. Where a price depends on the faces redrawn it is known only
+once the job finishes, so the quote is `credits_at_most`. A batch of mixed sizes is priced image
+by image. When it can be done more than one way, say which you would run and what each costs.
 In `cv.usage()` the balance is `credits_remaining`; `credits_spent` is what the account has
 spent, all time.
 

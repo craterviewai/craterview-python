@@ -1,18 +1,23 @@
 ---
 name: enhance
-description: Sharpen, enlarge, denoise or repair a photograph with CraterView.ai's hosted tools (enhance_image, image_enhance_quote, get_job) — "upscale this", "make it less blurry", "fix this old photo", "clean up this screenshot". Use when the CraterView.ai server is connected; if the user wants to call the API from their own code instead, the craterview-api plugin is the one.
+description: Sharpen, enlarge, denoise, repair or check a photograph with CraterView.ai's hosted tools (enhance_image, image_enhance_quote, get_job) — "upscale this", "make it less blurry", "fix this old photo", "was this made by AI?" — and see the account's balance and past jobs. Use when the CraterView.ai server is connected; if the user wants to call the API from their own code instead, the craterview-api plugin is the one.
 ---
 
 # Enhance an image with CraterView.ai
 
 CraterView.ai runs the work; you choose the model, hand over the image, and relay the result.
-The server exposes three tools:
+The server's tools:
 
 - `enhance_image` — upload one image and run a model on it. Most images finish inside the
-  call and return `output_url` set.
+  call, with links in `job.result.output`.
 - `image_enhance_quote` — what `enhance_image` would charge for an image, and the settings it
   would send, without running anything.
-- `get_job` — collect a job that `enhance_image` returned as `queued` or `running`.
+- `get_job` — collect a job that `enhance_image` returned as `queued` or `running`, or get
+  fresh links to one that has finished.
+- `get_usage` — the account's balance, its subscription and which queue its next job enters.
+- `list_jobs` — the account's jobs, most recent first.
+- `keep_job` — keep a result past its ordinary expiry. `unkeep_job` stops keeping it.
+- `delete_job_media` — delete a job's pictures now.
 
 The tool sends still images. What it accepts, and how large, is in its own description.
 
@@ -82,6 +87,8 @@ skill changing.
   alike. "Make this sharper" asks for a result, not for the run. Say which model and settings
   you would use and what the job will cost (see *Cost*), nothing for an account that is not
   paying, and wait. `image_enhance_quote` runs nothing and is free: call it without asking.
+- **The user makes the delete call too.** `delete_job_media` and `unkeep_job` cannot be undone:
+  call them only when the user has said to.
 - **A balance of zero, or less than the price, does not stop a job:** what the balance does
   not cover is never collected, and an account that is not paying — no credit and no
   subscription — runs free on the community queue, so never tell the user they need credits
@@ -104,20 +111,22 @@ Give exactly one of `image_url` or `image_base64`.
 
 ## Reading the result
 
-Every result is a link, with a small preview of it.
+An answer's `job` is the job as the API states it. On a finished job or a quote, `usage` is the
+account as `get_usage` answers it. A result is a link, with a small preview of it, except a check's,
+which is an answer in `job.result` that the tool's list of models explains.
 
-- `status: succeeded` — `output_url` displays in a page, `download_url` saves under the
-  job's name. **Both are presigned and expire.** Give the user the link now, or fetch the
-  image if it is wanted for something further; do not store the URL as if it were permanent.
-  `get_job` mints fresh links. `result_width`, `result_height`, `content_type` and `bytes`
-  describe the file. `credits_remaining` is the account's balance, not a limit: a job runs at
-  any balance.
+- `job.status: succeeded` — in `job.result.output`, `url` displays in a page and `download_url`
+  saves under the job's name. **Both are presigned and expire.** Give the user the link now, or
+  fetch the image if it is wanted for something further; do not store the URL as if it were
+  permanent. `get_job` mints fresh links. `content_type`, `bytes`, `width` and `height` beside
+  them describe the file. `credits_remaining` in `usage` is the account's balance, not a limit:
+  a job runs at any balance.
 - **Look at the preview before you describe the result.** It shows whether the job did what
   was asked — the framing, the colour, nothing missing — but it is too small to judge fine
   detail, so do not claim detail from it.
-- `status: queued` or `running` — the job is still going. `eta_seconds` is the platform's
-  estimate of the time left, and the note says it in words: tell the user how long to expect.
-  Then call `get_job` with the `job_id`. It waits for the job before it answers, so if it
+- `job.status: queued` or `running` — the job is still going. `job.eta_seconds` is the
+  platform's estimate of the time left: tell the user how long to expect.
+  Then call `get_job` with `job.id`. It waits for the job before it answers, so if it
   answers that the job is still going, call it again straight away; there is no need to pause
   between calls. Each answer carries the current estimate. **Do not call
   `enhance_image` again**: that runs and charges the work twice.
@@ -127,7 +136,7 @@ Every result is a link, with a small preview of it.
   limit for that model. Tell the user which factor was used. At 1× the picture keeps its size
   and has its detail rebuilt; if they wanted it larger, name a region of the picture (`roi`),
   which is what comes back enlarged.
-- `status: failed` — `error` says what happened in words the user can act on. A failed job
+- `job.status: failed` — `job.error` says what happened in words the user can act on. A failed job
   is not charged.
 
 ## Cost
@@ -136,13 +145,16 @@ A completed job on paid compute charges the account's credits — the price is p
 stated by the catalogue, and on some models a smaller picture costs less, as the tool's list
 of models says. Say what a job will cost before the user decides to run it, one picture as
 much as a batch; when it can be done more than one way, say which you would run and what each
-costs. `image_enhance_quote` gives the price of this picture, the settings `enhance_image` would
-send and, for an enlargement by `scale`, the result's size in megapixels. Its
-`credits_remaining` is the account's balance, not a limit: a job runs at any balance. It
-refuses what `enhance_image` would refuse at once; a `width` or `height` is checked only when
+costs. `image_enhance_quote` gives, under `quote`, the price of this picture, the settings
+`enhance_image` would send and, for an enlargement by `scale`, the result's size in megapixels.
+`credits_remaining` in its `usage` is the account's balance, not a limit: a job runs at any
+balance. It refuses a size a job would be refused for; a `width` or `height` is settled only when
 the job runs. For an image you would send inline, give `image_width` and `image_height`
 instead of the image.
 
 An account that is not paying still runs, and is charged nothing: the job goes to the
 community queue, which runs on shared, free capacity, so at busy times it waits longer rather
 than being refused. Never re-run a job the user did not ask to repeat.
+
+The user buys credit or a subscription at https://craterview.ai/dashboard#buy: no tool buys
+anything.
