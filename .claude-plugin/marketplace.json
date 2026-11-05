@@ -13,7 +13,7 @@
       "name": "craterview",
       "source": "./plugins/craterview",
       "description": "Enhance, enlarge and restore photographs from the conversation, through CraterView.ai's hosted tools. Connects the server for you; no key to handle.",
-      "version": "0.1.10",
+      "version": "0.1.11",
       "category": "productivity",
       "keywords": ["image", "upscale", "enhance", "restore", "photo", "mcp"],
       "homepage": "https://craterview.ai"

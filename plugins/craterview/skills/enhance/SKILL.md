@@ -1,25 +1,29 @@
 ---
 name: enhance
-description: Sharpen, enlarge, denoise, repair or check a photograph with CraterView.ai's hosted tools (enhance_image, image_enhance_quote, get_job) — "upscale this", "make it less blurry", "fix this old photo", "was this made by AI?" — and see the account's balance and past jobs. Use when the CraterView.ai server is connected; if the user wants to call the API from their own code instead, the craterview-api plugin is the one.
+description: Sharpen, enlarge, denoise, repair or check a photograph with CraterView.ai's hosted tools (enhance_photo, denoise_photo, restore_photo, make_headshot, redraw_small_faces, check_content, check_real, quote, get_job) — "upscale this", "make it less blurry", "fix this old photo", "was this made by AI?" — and see the account's balance and past jobs. Use when the CraterView.ai server is connected; if the user wants to call the API from their own code instead, the craterview-api plugin is the one.
 ---
 
 # Enhance an image with CraterView.ai
 
-CraterView.ai runs the work; you choose the model, hand over the image, and relay the result.
+CraterView.ai runs the work; you choose the tool, hand over the image, and relay the result.
 The server's tools:
 
-- `enhance_image` — upload one image and run a model on it. Most images finish inside the
+- `enhance_photo`, `denoise_photo`, `restore_photo`, `make_headshot`, `redraw_small_faces` —
+  one tool per task: upload one image and run that task on it. Most images finish inside the
   call, with links in `job.result.output`.
-- `image_enhance_quote` — what `enhance_image` would charge for an image, and the settings it
-  would send, without running anything.
-- `get_job` — collect a job that `enhance_image` returned as `queued` or `running`, or get
-  fresh links to one that has finished.
+- `check_content`, `check_real` — upload one image and check it, changing nothing. The answer
+  is in `job.result`.
+- `quote` — what a job would charge for an image, and the settings its tool would send, without
+  running anything.
+- `get_job` — collect a job that its tool returned as `queued` or `running`, or get fresh links
+  to one that has finished.
 - `get_usage` — the account's balance, its subscription and which queue its next job enters.
-- `list_jobs` — the account's jobs, most recent first.
-- `keep_job` — keep a result past its ordinary expiry. `unkeep_job` stops keeping it.
+- `list_jobs` — the account's jobs, most recent first, without links: `get_job` has one job's.
+- `keep_job_media` — keep a job's pictures past their ordinary expiry. The user stops keeping
+  them in their job history.
 - `delete_job_media` — delete a job's pictures now.
 
-The tool sends still images. What it accepts, and how large, is in its own description.
+These tools send still images. What each accepts, and how large, is in its own description.
 
 ## Before the first call: connect the account
 
@@ -56,23 +60,23 @@ their own code, a script or a server — it is on the dashboard under **Develope
 name it, press **Get a key**, then **Copy**. It is shown only then. Keys begin with `cv_`.
 The `craterview-api` plugin is the skill for that route.
 
-## Choosing the model
+## Choosing the tool
 
-`enhance_image` takes a `model` and a `params` object. **Both are read from CraterView.ai's
-catalogue each time the server is used**, so the tool's own description is the current list:
-every model it offers, what each is for, and every setting each one takes with its range and
-default. Read it there rather than from memory; models and settings are added without this
-skill changing.
+There is one tool per task. Each takes the image, a tool with settings takes them in a `params`
+object, and a check has none. **The tools are
+read from CraterView.ai's catalogue each time the server is used**, so their own descriptions are
+the current list: what each is for, and every setting it takes with its range and default. Read
+them there rather than from memory; tasks and settings are added without this skill changing.
 
 - **Asked what can be done to improve a photograph, suggest Enhance first, almost always, a
   grainy one included:** it is better than most people expect. Suggest trying Denoise as well,
   which is the one for someone who wants only the noise gone. The exceptions are requests
-  another model is for: a torn or faded print, a headshot, a check.
-- Match the request to what each model says it is for. When the request is ambiguous, ask
+  another tool is for: a torn or faded print, a headshot, a check.
+- Match the request to what each tool says it is for. When the request is ambiguous, ask
   before you guess: "sharpen this old photo" is an enhancement if the print is intact and a
   repair if it is torn or stained, and enlarging a damaged print sharpens the damage.
-- **Send only the settings the user asked for.** Each has a default, and each model refuses a
-  setting it does not take — the tool says which models take each one.
+- **Send only the settings the user asked for.** Each has a default, and a tool refuses a
+  setting it does not list.
 - **Leave an enlargement factor out** unless the user named one. A model that enlarges bounds
   the size of what it returns, so the largest factor a picture can have depends on how large
   it is, and omitting it takes the largest that fits. A factor too large for the picture is
@@ -82,13 +86,13 @@ skill changing.
   parts.
 - If a model's description warns about something — a face rebuilt as a likeness rather than
   the original pixels, say — pass that on to the user before they rely on the result.
-- **The user makes the run call.** Call `enhance_image` only when the user has said to run
-  it: every call, one picture as much as a batch, a free model and the community queue
-  alike. "Make this sharper" asks for a result, not for the run. Say which model and settings
+- **The user makes the run call.** Call a tool that runs a job only when the user has said to
+  run it: every call, one picture as much as a batch, a free check and the community queue
+  alike. "Make this sharper" asks for a result, not for the run. Say which tool and settings
   you would use and what the job will cost (see *Cost*), nothing for an account that is not
-  paying, and wait. `image_enhance_quote` runs nothing and is free: call it without asking.
-- **The user makes the delete call too.** `delete_job_media` and `unkeep_job` cannot be undone:
-  call them only when the user has said to.
+  paying, and wait. `quote` runs nothing and is free: call it without asking.
+- **The user makes the delete call too.** `delete_job_media` cannot be undone: call it only when
+  the user has said to.
 - **A balance of zero, or less than the price, does not stop a job:** what the balance does
   not cover is never collected, and an account that is not paying — no credit and no
   subscription — runs free on the community queue, so never tell the user they need credits
@@ -113,7 +117,7 @@ Give exactly one of `image_url` or `image_base64`.
 
 An answer's `job` is the job as the API states it. On a finished job or a quote, `usage` is the
 account as `get_usage` answers it. A result is a link, with a small preview of it, except a check's,
-which is an answer in `job.result` that the tool's list of models explains.
+which is an answer in `job.result` that the tool's description explains.
 
 - `job.status: succeeded` — in `job.result.output`, `url` displays in a page and `download_url`
   saves under the job's name. **Both are presigned and expire.** Give the user the link now, or
@@ -129,7 +133,7 @@ which is an answer in `job.result` that the tool's list of models explains.
   Then call `get_job` with `job.id`. It waits for the job before it answers, so if it
   answers that the job is still going, call it again straight away; there is no need to pause
   between calls. Each answer carries the current estimate. **Do not call
-  `enhance_image` again**: that runs and charges the work twice.
+  the tool again**: that runs and charges the work twice.
 - `scale` — the enlargement factor the job was sent, absent when you sized the result with a
   `width` or `height` instead. When you left all three out, `scale_note` says so and how the
   one used was chosen: the largest factor whose result fits the account's size
@@ -142,11 +146,11 @@ which is an answer in `job.result` that the tool's list of models explains.
 ## Cost
 
 A completed job on paid compute charges the account's credits — the price is per model and
-stated by the catalogue, and on some models a smaller picture costs less, as the tool's list
-of models says. Say what a job will cost before the user decides to run it, one picture as
+stated by the catalogue, and on some tools a smaller picture costs less, as the tool's
+description says. Say what a job will cost before the user decides to run it, one picture as
 much as a batch; when it can be done more than one way, say which you would run and what each
-costs. `image_enhance_quote` gives, under `quote`, the price of this picture, the settings
-`enhance_image` would send and, for an enlargement by `scale`, the result's size in megapixels.
+costs. The `quote` tool gives, in its answer's `quote`, the price of this picture, the settings
+the job would be sent and, for an enlargement by `scale`, the result's size in megapixels.
 `credits_remaining` in its `usage` is the account's balance, not a limit: a job runs at any
 balance. It refuses a size a job would be refused for; a `width` or `height` is settled only when
 the job runs. For an image you would send inline, give `image_width` and `image_height`
