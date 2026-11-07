@@ -1,6 +1,6 @@
 ---
 name: enhance
-description: Sharpen, enlarge, denoise, repair or check a photograph with CraterView.ai's hosted tools (enhance_photo, denoise_photo, restore_photo, make_headshot, redraw_small_faces, check_content, check_real, quote, get_job) — "upscale this", "make it less blurry", "fix this old photo", "was this made by AI?" — and see the account's balance and past jobs. Use when the CraterView.ai server is connected; if the user wants to call the API from their own code instead, the craterview-api plugin is the one.
+description: Sharpen, enlarge, denoise, repair or check a photograph with CraterView.ai's hosted tools (upload_photo, view_photo, enhance_photo, denoise_photo, restore_photo, make_headshot, redraw_small_faces, check_content, check_real, quote, get_job) — "upscale this", "make it less blurry", "fix this old photo", "was this made by AI?" — and see the account's balance and past jobs. Use when the CraterView.ai server is connected; if the user wants to call the API from their own code instead, the craterview-api plugin is the one.
 ---
 
 # Enhance an image with CraterView.ai
@@ -8,11 +8,15 @@ description: Sharpen, enlarge, denoise, repair or check a photograph with Crater
 CraterView.ai runs the work; you choose the tool, hand over the image, and relay the result.
 The server's tools:
 
+- `upload_photo` — put an image in first, from a link, a file or an earlier job. Every tool below
+  that takes an image takes the `input_key` it answers with.
+- `view_photo` — look at an image or part of it, free and changing nothing, before you choose a tool.
+  It takes a region in pixels, and its answer gives the matching `roi` for a job.
 - `enhance_photo`, `denoise_photo`, `restore_photo`, `make_headshot`, `redraw_small_faces` —
-  one tool per task: upload one image and run that task on it. Most images finish inside the
-  call, with links in `job.result.output`.
-- `check_content`, `check_real` — upload one image and check it, changing nothing. The answer
-  is in `job.result`.
+  one tool per task: run that task on one image. Most images finish inside the call, with links
+  in `job.result.output`.
+- `check_content`, `check_real` — check one image, changing nothing. The answer is in
+  `job.result`.
 - `quote` — what a job would charge for an image, and the settings its tool would send, without
   running anything.
 - `get_job` — collect a job that its tool returned as `queued` or `running`, or get fresh links
@@ -87,10 +91,11 @@ them there rather than from memory; tasks and settings are added without this sk
 - If a model's description warns about something — a face rebuilt as a likeness rather than
   the original pixels, say — pass that on to the user before they rely on the result.
 - **The user makes the run call.** Call a tool that runs a job only when the user has said to
-  run it: every call, one picture as much as a batch, a free check and the community queue
-  alike. "Make this sharper" asks for a result, not for the run. Say which tool and settings
-  you would use and what the job will cost (see *Cost*), nothing for an account that is not
-  paying, and wait. `quote` runs nothing and is free: call it without asking.
+  run it: every call, one picture as much as a batch, the community queue too. "Make this
+  sharper" asks for a result, not for the run. Say which tool and settings you would use and
+  what the job will cost (see *Cost*), nothing for an account that is not paying, and wait.
+  `quote` runs nothing and is free: call it without asking. So is a check whose tool says it
+  needs no go-ahead: call it when its answer would help.
 - **The user makes the delete call too.** `delete_job_media` cannot be undone: call it only when
   the user has said to.
 - **A balance of zero, or less than the price, does not stop a job:** what the balance does
@@ -102,16 +107,27 @@ them there rather than from memory; tasks and settings are added without this sk
 
 ## Handing over the image
 
-Give exactly one of `image_url` or `image_base64`.
+Every image goes in through `upload_photo` first, and the tools take the `input_key` it answers
+with. One `input_key` can be sent to any number of jobs, so try another setting without sending
+the image again.
 
-- **Prefer `image_url`** whenever the image has an address. Inline base64 is text in your
-  context; a one-megabyte image is hundreds of thousands of tokens.
-- Use `image_base64` only for a file you can read — the user's local file, which has no URL,
-  or one you have written yourself. Encode the file's bytes; say that you are doing so, and
-  prefer the smallest copy that will do. A `data:` URL is accepted.
-- **An image you can only see — one attached to the conversation — cannot be sent.** Seeing
-  a picture does not give you its file, and base64 written from what you see is not that
-  image. Ask the user for a link to it, or for the file somewhere you can read it.
+- **An image at a link**, public or signed: give it as `image_url`. Do this without asking, so you
+  can quote it.
+- **A file on this computer, with a shell that can read it:** read its type and size there, so the
+  image never enters your context, and give those as `content_type` and `content_length`. Run the
+  `command` in the answer with the file's path: it sends the file straight to storage. The file
+  stays on the computer until the user says to run: to price it, read its width and height in your
+  shell and give those to `quote`.
+- **What an earlier job returned:** give that job's `id` as `job_id`, and nothing is downloaded.
+  For `enhance_photo`, the original photo is strongly recommended, before Denoise or Restore: it
+  might not work well on a result.
+- **`image_base64` is the last resort,** for a very small file you cannot send any other way. It is
+  text in your context; a one-megabyte image is hundreds of thousands of tokens. A `data:` URL is
+  accepted.
+- **An image you can only see — one attached to the conversation — cannot be sent.** Seeing a
+  picture does not give you its file, and base64 written from what you see is not that image. The
+  same goes for a shell that cannot reach storage. Ask the user for a link, or to choose the photo
+  in their CraterView.ai workspace and give you its File ID, which is an `input_key`.
 
 ## Reading the result
 

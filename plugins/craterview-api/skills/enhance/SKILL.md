@@ -145,7 +145,7 @@ another model is for: a torn or faded print, a headshot, a check.
 
 | The user wants | Model: its id, then its title | Settings |
 | --- | --- | --- |
-| Almost any photograph improved: sharper, with fine detail rebuilt and fewer compression artifacts, at its own size or larger — a soft scan, a small or cropped photo, a screenshot, a grainy photograph | `cv-enhance-v3`, Enhance | `scale`, or `width` or `height` instead — one of the three. `binning` for a noisy photograph that is also to be enlarged: simple noise reduction, pixel binning, which averages each square of pixels into one before enlarging, which takes the noise out but enlarges less; this, not `cv-denoise-v1` first, because removing the noise first can remove the detail the enlargement needs |
+| Almost any photograph improved: sharper, with fine detail rebuilt and fewer compression artifacts, at its own size or larger — a soft scan, a small or cropped photo, a screenshot, a grainy photograph | `cv-enhance-v3`, Enhance | `scale`, or `width` or `height` instead — one of the three. `binning` for a noisy photograph that is also to be enlarged: simple noise reduction, pixel binning, which averages each square of pixels into one before enlarging, which takes the noise out but enlarges less; this, never `cv-denoise-v1` first, because a model run first can destroy what Enhance needs to enlarge |
 | Grain taken out of a photograph from low light or a high ISO, without enlarging it — much better at this than Enhance's `binning`, and worth trying beside Enhance | `cv-denoise-v1`, Denoise | the image, or the part named with `roi`, comes back at its own size; `seed` |
 | Small, blurry or distorted faces made to look natural — the people in a group photo, usually after `cv-enhance-v3` has enlarged it | `cv-faces-v1`, Small face enhancement | `seed`; only faces too small to show clearly are redrawn; a picture with none fails as `no_small_face_found`, which is not charged |
 | A damaged print repaired — tears, creases, scratches, dust, faded colour | `cv-restore-v1`, Restore | `monochrome` for a black-and-white print; `context`, a sentence of what the picture cannot show, which the repair follows: ask the user for it before a black-and-white photograph of people comes back in colour; `seed`. The image, or the part named with `roi`, comes back at its own size; a large one is repaired smaller and its detail drawn again at full size, as its catalogue description says, so its finest detail is the repair's, not the scan's. In a very small photograph, small details can come back changed |
@@ -175,7 +175,10 @@ Over raw HTTP the same three steps are `POST /v1/uploads` (declare `content_type
 `content_length`, PUT exactly that many bytes to the returned `upload_url`), `POST /v1/jobs`
 with `model`, `input_key` and `params` (add `?wait=25` to hold the response for a settled
 result), and `GET /v1/jobs/{id}`. Image bytes never pass through the API — uploads go to
-storage on a presigned URL and results come back the same way.
+storage on a presigned URL and results come back the same way. To run a job on what another
+returned, `POST /v1/uploads/from-job` with its `job_id` answers with an `input_key` for the result,
+without the file leaving storage. For `cv-enhance-v3`, the original photograph is strongly
+recommended, before any other model: it might not work well on another model's result.
 
 For a shell script, a CI step or a language the clients do not cover, `reference/http.md`
 makes the same calls with curl and lists what goes wrong over raw HTTP.
