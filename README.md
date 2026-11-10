@@ -3,6 +3,9 @@
 Python client for the [CraterView.ai](https://craterview.ai) image enhancement and
 restoration API.
 
+New to it? The [guide to the clients](https://craterview.ai/guides/clients#python) walks
+through a first job, a folder of photos and two tools in a row. This README is the reference.
+
 ```bash
 pip install craterview
 ```
