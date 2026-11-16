@@ -404,9 +404,9 @@ class Job:
     again. Yours is removed on its own schedule. Both expire with the job's other pictures.
 
     `community` says the job runs free on the community queue: same models, smaller size
-    limits, longer waits at busy times. A job goes there without credit or a subscription,
-    or once a limited subscription's monthly allowance is spent. A balance of zero never
-    stops a job.
+    limits on those that return a picture, longer waits at busy times. A job goes there
+    without credit or a subscription, or once a limited subscription's monthly allowance is
+    spent. A balance of zero never stops a job.
     `models()` lists each model's limits for your key, and a file over them is refused with
     the limit named.
     """
