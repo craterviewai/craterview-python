@@ -10,8 +10,8 @@ The server's tools:
 
 - `upload_photo` — put an image in first, from a link, a file or an earlier job. Every tool below
   that takes an image takes the `input_key` it answers with.
-- `view_photo` — look at an image or part of it, free and changing nothing, before you choose a tool.
-  It takes a region in pixels, and its answer gives the matching `roi` for a job.
+- `view_photo` — look at an image or part of it, free and needing no go-ahead, before you choose a tool.
+  It takes a part as a `roi` in fractions, as a job does, and its answer gives the `roi` of the part shown.
 - `enhance_photo`, `denoise_photo`, `restore_photo`, `make_headshot`, `redraw_small_faces` —
   one tool per task: run that task on one image. Most images finish inside the call, with links
   in `job.result.output`.
