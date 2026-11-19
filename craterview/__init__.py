@@ -13,6 +13,7 @@ you.
 
 from __future__ import annotations
 
+import copy
 import re
 import secrets
 import time
@@ -72,7 +73,7 @@ def new_idempotency_key() -> str:
                 continue                      # same key, so at most one job is created
 
     The two it catches are `ConnectionFailed` and `TimedOut`, this client's errors for a
-    request that never got an answer; each is also the builtin the loop names. Anything
+    request that got no whole answer; each is also the builtin the loop names. Anything
     else the API answered with — a refusal, a 409 — is not a reason to repeat the request.
 
     Generating a fresh key per attempt defeats the purpose entirely — the server has
@@ -115,9 +116,9 @@ class CraterViewError(RuntimeError):
 
 class ConnectionFailed(CraterViewError, ConnectionError):
     """The request never reached the API or storage: refused, reset, or a name that would
-    not resolve. Also the builtin `ConnectionError`, so the retry loop in
-    `new_idempotency_key` catches it. Nothing was received, so repeating the request with
-    the same idempotency key is safe."""
+    not resolve; or its answer was cut off on the way. Also the builtin `ConnectionError`, so
+    the retry loop in `new_idempotency_key` catches it. No whole answer was received, so
+    repeating the request with the same idempotency key is safe."""
 
 
 class InvalidId(CraterViewError, ValueError):
@@ -159,6 +160,16 @@ def _worth_asking_again(failure: CraterViewError) -> bool:
     return isinstance(failure, (TimedOut, ConnectionFailed)) or (failure.status or 0) >= 500
 
 
+def _restated(failure: CraterViewError, message: str, **changed: Any) -> CraterViewError:
+    """`failure` with `message` in place of its own and each of `changed` set: every other
+    field kept, so one added to the class is not dropped where an error is said again."""
+    again = copy.copy(failure)
+    again.args = (message,)
+    for name, value in changed.items():
+        setattr(again, name, value)
+    return again
+
+
 def _queued_nothing(failure: CraterViewError | None) -> bool:
     """The API's own 503 to a submission: the one status it answers before anything is
     recorded, so nothing was queued or charged. A 503 page from something on the way carries
@@ -173,13 +184,15 @@ def _sent(call, *args, **kwargs) -> requests.Response:
     One place, so no call can let a `requests` exception escape: the documented retry loop
     catches the builtins these subclass, and a request made any other way would be a
     request it silently cannot retry. A timeout is checked first, because a connect timeout
-    is both a timeout and a connection error, and the loop treats them alike anyway.
+    is both a timeout and a connection error, and the loop treats them alike anyway. An
+    answer cut off on the way is no whole answer either; one that arrived whole and cannot
+    be decoded is the same answer the next time, and is not.
     """
     try:
         return call(*args, **kwargs)
     except requests.Timeout as failure:
         raise TimedOut(str(failure)) from failure
-    except requests.ConnectionError as failure:
+    except (requests.ConnectionError, requests.exceptions.ChunkedEncodingError) as failure:
         raise ConnectionFailed(str(failure)) from failure
     except requests.RequestException as failure:
         raise CraterViewError(str(failure)) from failure
@@ -201,7 +214,8 @@ class RateLimited(CraterViewError):
     or `queue_full`, in the order below.
 
     - The account's request rate, per minute — counted across all its keys, for
-      submitting jobs, creating keys and gallery calls. No other call counts.
+      submitting jobs, creating keys, keeping a result or ending a keep, and gallery
+      calls. No other call counts.
     - The account's new keys, per hour — counted across all its keys, and only from
       `create_key`.
     - The account's upload URLs, per minute — counted across all its keys.
@@ -396,7 +410,9 @@ class Job:
 
     `thumbnail_url` is a small JPEG of the job's picture — the result, or the image the model
     worked from when it produced no file — for showing a page of jobs without downloading a
-    page of full-size pictures. `input_url` is the picture the model worked
+    page of full-size pictures. A job from `jobs()` has it only when the list is asked with
+    `include_thumbnails=True`, and has no other link: `job(id)` reads one job with all of
+    them. `input_url` is the picture the model worked
     from, so a result can be shown against it — and where you named a region, it is that
     region, so what was used is something you can look at rather than something to take on
     trust. It is not the file you uploaded but a new one written from it, not copied — so
@@ -404,7 +420,7 @@ class Job:
     again. Yours is removed on its own schedule. Both expire with the job's other pictures.
 
     `community` says the job runs free on the community queue: same models, smaller size
-    limits on those that return a picture, longer waits at busy times. A job goes there
+    limits on most of those that return a picture, longer waits at busy times. A job goes there
     without credit or a subscription, or once a limited subscription's monthly allowance is
     spent. A balance of zero never stops a job.
     `models()` lists each model's limits for your key, and a file over them is refused with
@@ -772,7 +788,7 @@ class CraterView:
         return Job._from(self._request("GET", f"/v1/jobs/{_issued('job', job_id, 'job_id')}"),
                          self)
 
-    def jobs(self, limit: int = 50) -> Iterator[Job]:
+    def jobs(self, limit: int = 50, include_thumbnails: bool = False) -> Iterator[Job]:
         """Iterate the account's job history, newest first, paging transparently.
 
         Scoped to the account rather than to this key, so a key sees every job the account
@@ -781,10 +797,16 @@ class CraterView:
         `limit` is how many jobs one request fetches, not how many you get: iteration
         continues until the history runs out. 200 is the largest page the API serves, and a
         bigger number is fetched as 200 rather than sent and refused.
+
+        A job from here carries no links: `output_url`, `download_url` and `input_url` are
+        None, and `job(id)` reads one job with them. `include_thumbnails=True` gives each job
+        its `thumbnail_url`, a small preview for showing the list.
         """
         before = None
         while True:
             query = f"/v1/jobs?limit={min(limit, MAX_PAGE)}"
+            if include_thumbnails:
+                query += "&include_thumbnails=true"
             if before:
                 query += f"&before={before}"
             page = self._request("GET", query)
@@ -986,15 +1008,18 @@ class CraterView:
             if not _worth_asking_again(failure):
                 raise
             if _queued_nothing(first) and _queued_nothing(failure):
-                raise type(failure)(
-                    f"the submission was asked twice, and both times CraterView said why: "
-                    f"{failure}", failure.status, failure.trace_id) from failure
-            raise type(failure)(
+                raise _restated(failure, f"the submission was asked twice, and both times "
+                                         f"CraterView said why: {failure}") from failure
+            # Without the second answer's code: it says what became of that ask, and the first
+            # may have made a job. An `unavailable` here would tell a caller branching on it
+            # that nothing was done.
+            raise _restated(
+                failure,
                 f"the submission was asked twice and answered neither time ({failure}), so a "
                 f"job may have been made; if it was, it runs and is charged only if it "
                 f"succeeds. Look for it with jobs(), newest first, before running this again: "
                 f"run() uploads afresh, so repeating it starts a second job.",
-                failure.status, failure.trace_id) from failure
+                code=None) from failure
         if not job.done:
             job = self.wait_for(job, timeout=timeout)
         if raise_on_failure and not job.succeeded:

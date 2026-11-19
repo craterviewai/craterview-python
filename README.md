@@ -143,7 +143,7 @@ for attempt in range(3):
 ```
 
 The two it catches are `ConnectionFailed` and `TimedOut`, raised when a request got no
-answer; each is also the builtin the loop names. An answer from the API, even a refusal, is
+whole answer; each is also the builtin the loop names. An answer from the API, even a refusal, is
 not a reason to send the request again.
 
 Generating a fresh key per attempt defeats the point entirely — the server has nothing to
@@ -163,7 +163,7 @@ it. `.job_id` names the job an error is about, where there is one.
 |---|---|
 | `RateLimited` | 429 — one of five limits, and `.code` says which: `rate_limited` (the account's request rate), `too_many_uploads`, `too_many_keys`, `too_many_jobs` or `queue_full`. `.retry_after` is seconds to wait: until the window rolls over for the two per-minute limits, until a new key can be made for the hourly one, or an interval to poll on for the other two. |
 | `JobFailed` | The job ran and did not succeed. `.args[0]` says what you can do about it; `.error_code` is the half to branch on; `.job_id` is the job. |
-| `ConnectionFailed` | The request never reached the API or storage: refused, reset, or a name that would not resolve. Also a builtin `ConnectionError`. Safe to repeat with the same idempotency key. |
+| `ConnectionFailed` | The request never reached the API or storage: refused, reset, or a name that would not resolve; or its answer was cut off on the way. Also a builtin `ConnectionError`. Safe to repeat with the same idempotency key. |
 | `TimedOut` | No answer within the client's `timeout`. Also a builtin `TimeoutError`. The request may have arrived, so repeat a submission with the same idempotency key, never a new one. From `run()`, which uploads afresh each time, look for the job in `jobs()` instead. |
 | `InvalidId` | An id that is not one the API issued, refused before any request is made, so it carries no `.status`. Pass a job's or a key's `id` exactly as the API returned it. Also a builtin `ValueError`. |
 | `InvalidSignature` | A webhook delivery did not verify. Do not act on its body. |
@@ -183,9 +183,9 @@ Every field the API publishes on a job is exposed here.
 | `credits` | **What you were billed.** Nothing past your balance is collected |
 | `eta_seconds` | Seconds until the job is expected to finish, recomputed on every read — it counts down while the job runs. Absent once the job has settled. Estimated for your image's size when `upload()` could read it — its header is read with Pillow, nothing is decoded — or when you pass `input_megapixels` to `submit()`; for a typical image otherwise |
 | `community` | True when the job is on the community queue, which runs on shared, free capacity and can wait longer at busy times |
-| `output_url`, `download_url` | The result, presigned. One to display, one to save |
-| `thumbnail_url` | A small JPEG of the job's picture, for listings — the result, or what the model worked from when it produced no file. Null when none was drawn |
-| `input_url` | The picture the model worked from — the region, where you named one |
+| `output_url`, `download_url` | The result, presigned. One to display, one to save. None on a job from `jobs()`: read it with `job(id)` |
+| `thumbnail_url` | A small JPEG of the job's picture, for listings — the result, or what the model worked from when it produced no file. Null when none was drawn, and on a job from `jobs()` unless asked with `include_thumbnails=True` |
+| `input_url` | The picture the model worked from — the region, where you named one. None on a job from `jobs()` |
 | `output_content_type` | The result's media type |
 | `output_bytes` | The result's size in bytes |
 | `output_width`, `output_height` | The result's size in pixels |
@@ -209,7 +209,7 @@ which is what makes it impossible to get wrong.
 
 **Running out of credit does not stop you.** A job at a balance of zero is accepted. Without a
 subscription, or once a limited subscription's monthly allowance is spent, it runs free on the
-community queue: same models, smaller size limits on those that return a picture, longer waits
+community queue: same models, smaller size limits on most of those that return a picture, longer waits
 at busy times. It comes back with `community` set, and `usage()` reports the same flag for your
 next job before you send it. There
 is no payment error to handle: credit or a subscription moves work onto paid compute that scales
@@ -223,7 +223,9 @@ fetch the result rather than storing the link.
 
 `thumbnail_url` and `input_url` are for building a job listing: a few-hundred-pixel preview so a
 page of jobs costs kilobytes, and the picture the model worked from so a result can be
-shown against it. Where you named a region, `input_url` is that region — so a before-and-after
+shown against it. `cv.jobs(include_thumbnails=True)` gives each job its preview and no other
+link; read a job with `cv.job(id)` when one is opened, for its result and `input_url`.
+Where you named a region, `input_url` is that region — so a before-and-after
 is a true pair, and what was used is something you can look at rather than something to take
 on trust. It is not the file you uploaded but a new one written from it, not copied —
 so do not expect a hash of it to match your file's, and a JPEG or WebP is compressed
@@ -301,7 +303,7 @@ old one. You cannot revoke the key you are calling with.
 
 ```python
 cv.models()                       # models, what each takes and answers with, and which queue you are on
-cv.jobs(limit=50, status="succeeded")   # your history, newest first, paging transparently
+cv.jobs(limit=50)                 # your history, newest first, paging transparently
 cv.job("job_...")                 # one job by id
 cv.usage()                        # credit balance, next job's queue, spend and job counts
 cv.quote("cv-enhance-v3", {"scale": 2}, input_width=1500, input_height=1000)   # a job's price and result size, run nothing
@@ -309,7 +311,8 @@ cv.quote("cv-enhance-v3", {"scale": 2}, input_width=1500, input_height=1000)   #
 
 `jobs()` is a generator and pages for you. `limit` is how many jobs one request fetches, not
 how many you get: it keeps going until your history runs out. 200 is the largest page the
-API serves, and a bigger number is fetched as 200.
+API serves, and a bigger number is fetched as 200. A job from it carries no links, unless you
+pass `include_thumbnails=True` for each job's preview; `job(id)` has the rest.
 
 ## Configuration
 
