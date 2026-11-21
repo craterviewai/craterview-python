@@ -73,8 +73,8 @@ the current list: what each is for, and every setting it takes with its range an
 them there rather than from memory; tasks and settings are added without this skill changing.
 
 - **Asked what can be done to improve a photograph, suggest Enhance first, almost always, a
-  grainy one included:** it is better than most people expect. Suggest trying Denoise as well,
-  which is the one for someone who wants only the noise gone. The exceptions are requests
+  grainy one included.** Suggest trying Denoise as well, which is the one for someone who wants
+  only the noise gone. The exceptions are requests
   another tool is for: a torn or faded print, a headshot, a check.
 - Match the request to what each tool says it is for. When the request is ambiguous, ask
   before you guess: "sharpen this old photo" is an enhancement if the print is intact and a
@@ -88,8 +88,9 @@ them there rather than from memory; tasks and settings are added without this sk
   the full factor. The server does not join pictures: regions sent one by one come back as
   separate pictures, each a job of its own, so do not offer to piece a picture together from
   parts.
-- If a model's description warns about something — a face rebuilt as a likeness rather than
-  the original pixels, say — pass that on to the user before they rely on the result.
+- **The tools make an informed estimate of fine detail, so small text can come back with
+  made-up letters and a small face as a likeness rather than the person. Tell the user before
+  they rely on either.** Pass on anything else a tool's description warns of, too.
 - **The user makes the run call.** Call a tool that runs a job only when the user has said to
   run it: every call, one picture as much as a batch, the community queue too. "Make this
   sharper" asks for a result, not for the run. Say which tool and settings you would use and
@@ -126,8 +127,8 @@ the image again.
   accepted.
 - **An image you can only see — one attached to the conversation — cannot be sent.** Seeing a
   picture does not give you its file, and base64 written from what you see is not that image. The
-  same goes for a shell that cannot reach storage. Ask the user for a link, or to choose the photo
-  in their CraterView.ai workspace and give you its File ID, which is an `input_key`.
+  same goes for a shell that cannot reach storage. Ask the user to choose the photo in their
+  CraterView.ai workspace and give you its File ID, which is an `input_key`, or for a link to it.
 
 ## Reading the result
 
@@ -178,3 +179,10 @@ than being refused. Never re-run a job the user did not ask to repeat.
 
 The user buys credit or a subscription at https://craterview.ai/dashboard#buy: no tool buys
 anything.
+
+## Privacy
+
+Asked what happens to a photo, say this, which is the privacy policy's:
+
+Privacy: images and results are private to the account, never used to train, tune or evaluate a
+model, public only if the user submits them to the gallery.

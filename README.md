@@ -209,7 +209,7 @@ which is what makes it impossible to get wrong.
 
 **Running out of credit does not stop you.** A job at a balance of zero is accepted. Without a
 subscription, or once a limited subscription's monthly allowance is spent, it runs free on the
-community queue: same models, smaller size limits on most of those that return a picture, longer waits
+community queue: same models, smaller size limits on some of them, longer waits
 at busy times. It comes back with `community` set, and `usage()` reports the same flag for your
 next job before you send it. There
 is no payment error to handle: credit or a subscription moves work onto paid compute that scales

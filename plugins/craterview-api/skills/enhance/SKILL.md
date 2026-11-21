@@ -25,9 +25,10 @@ reaches it:
 
 ## Getting an API key
 
-Every `/v1` route but the model catalogue needs a key, so this comes before any code that
-calls one. **Check for a
-key first**, and do not write or run anything against the API until there is one:
+Every `/v1` route needs a key except two reads: the model catalogue (`GET /v1/models`) and
+the public gallery (`GET /v1/gallery/public`). So this comes before any code that calls the
+API. **Check for a key first**, and do not write or run anything against the API until there
+is one:
 
 ```bash
 test -n "$CV_API_KEY" && echo "a key is set" || echo "no key"
@@ -130,41 +131,38 @@ It needs `craterview>=0.4.18` installed and `CV_API_KEY` in the environment.
 
 ## Choosing the model
 
-`cv.models()` (`GET /v1/models`) is the authority: each model's settings with their ranges
-and descriptions, its price (`credits_per_image`, and `credit_steps` where a smaller image
-costs less), the types it accepts, its size limits and
-the queue the key would land in. This table says what each model is for and names its main
-settings. Their ranges, the prices and the size limits are the catalogue's: read them there,
-and have code read them from `cv.models()` too, rather than from here. It is what was in
-service when the skill was written.
+`cv.models()` (`GET /v1/models`) is the authority on each model: what it is for, in its
+`description`; every setting, with its range, default and description; its price
+(`credits_per_image`, and `credit_steps` where a smaller image costs less); the types it
+accepts; its size limits; and the queue the key would land in. Read them there, and have code
+read them from `cv.models()` too, rather than from here. The table below names each model and
+adds only what the catalogue does not say.
 
 **Asked what can be done to improve a photograph, suggest Enhance first, almost always, a
-grainy one included: it is better than most people expect. Suggest trying Denoise as well,
-which is the one for someone who wants only the noise gone.** The exceptions are requests
-another model is for: a torn or faded print, a headshot, a check.
+grainy one included. Suggest trying Denoise as well, which is the one for someone who wants
+only the noise gone.** The exceptions are requests another model is for: a torn or faded
+print, a headshot, a check.
 
-| The user wants | Model: its id, then its title | Settings |
+| The user wants | Model: its id, then its title | What the catalogue does not say |
 | --- | --- | --- |
-| Almost any photograph improved: sharper, with fine detail rebuilt and fewer compression artifacts, at its own size or larger — a soft scan, a small or cropped photo, a screenshot, a grainy photograph | `cv-enhance-v3`, Enhance | `scale`, or `width` or `height` instead — one of the three. `binning` for a noisy photograph that is also to be enlarged: simple noise reduction, pixel binning, which averages each square of pixels into one before enlarging, which takes the noise out but enlarges less; this, never `cv-denoise-v1` first, because a model run first can destroy what Enhance needs to enlarge |
-| Grain taken out of a photograph from low light or a high ISO, without enlarging it — much better at this than Enhance's `binning`, and worth trying beside Enhance | `cv-denoise-v1`, Denoise | the image, or the part named with `roi`, comes back at its own size; `seed` |
-| Small, blurry or distorted faces made to look natural — the people in a group photo, usually after `cv-enhance-v3` has enlarged it | `cv-faces-v1`, Small face enhancement | `seed`; only faces too small to show clearly are redrawn; a picture with none fails as `no_small_face_found`, which is not charged |
-| A damaged print repaired — tears, creases, scratches, dust, faded colour | `cv-restore-v1`, Restore | `monochrome` for a black-and-white print; `context`, a sentence of what the picture cannot show, which the repair follows: ask the user for it before a black-and-white photograph of people comes back in colour; `seed`; `scale` to return it larger. The image, or the part named with `roi`, comes back at its own size unless `scale` enlarges it; a large result is repaired smaller and its detail drawn again at full size, as its catalogue description says, so its finest detail is the repair's, not the scan's. In a very small photograph, small details can come back changed |
-| A photograph with a face turned into a professional headshot | `cv-headshot-v1`, Headshot | `attire`, whose choices the catalogue describes; `roi` to choose the person in a photograph of several, since the headshot is made from the largest face in the image or region; `seed` |
-| An image screened against the content policy, unchanged | `cv-content-check-v1`, Content Check | none; `result.verdict` is `passed` or `flagged`; no output file |
-| To know whether an image was generated rather than captured, unchanged | `cv-real-check-v2`, Real Check | none; `result.verdict` is `generated`, `real` or `uncertain`. An estimate, not a certificate: do not act on `uncertain` either way; no output file |
-| The plumbing proved before anything is spent — the first call, a new integration, a test suite | `echo`, Echo | what `cv-enhance-v3` takes but `quality`, with its limits — `binning` included, though nothing is averaged — and `monochrome` and `credits`; free; in the catalogue with `test_model` true; no app offers it |
+| Almost any photograph improved — a soft scan, a small or cropped photo, a screenshot, a grainy photograph | `cv-enhance-v3`, Enhance | — |
+| Only the grain taken out of a photograph from low light or a high ISO, at its own size | `cv-denoise-v1`, Denoise | — |
+| Small, blurry or distorted faces made to look natural — the people in a group photo | `cv-faces-v1`, Small face enhancement | Usually run on the result of `cv-enhance-v3`'s enlargement. A picture with no face small enough fails as `no_small_face_found`, which is not charged |
+| A damaged print repaired — tears, creases, scratches, dust, faded colour | `cv-restore-v1`, Restore | Before a black-and-white photograph of people is returned in colour, ask the user who is in it and what they know of its colours, and send that as `context`. Without `context`, every colour, skin tone and damaged detail is a guess. A large result has its finest detail drawn by the repair rather than taken from the scan, and in a very small photograph small details can come back changed |
+| A photograph with a face turned into a professional headshot | `cv-headshot-v1`, Headshot | — |
+| An image screened against the content policy, unchanged | `cv-content-check-v1`, Content Check | — |
+| To know whether an image was generated rather than captured, unchanged | `cv-real-check-v2`, Real Check | An estimate, not a certificate: do not act on `uncertain` either way, and `real` means no sign was found, not that the image is untouched. A restored or enhanced photograph can read as `generated` |
+| The plumbing proved before anything is spent — the first call, a new integration, a test suite | `echo`, Echo | No app offers it |
 
-All image models also take `output_format` (`auto`, `png`, `jpeg`, `webp`), and all but `echo`
-`quality`. The
-format is a preference: where it cannot hold the picture whole the result comes back as PNG,
-and `result.output.content_type` says which. Bit depth and colour come back as sent, so a
-16-bit PNG stays 16-bit. The catalogue is the authority on all of this.
+Every image model takes `output_format`, and all but `echo` `quality`; the catalogue says what
+each format can hold. Bit depth and colour come back as sent, so a 16-bit PNG stays 16-bit. The
+catalogue is the authority on all of this.
 
 Each model refuses a parameter it does not publish — a `scale` sent to `cv-denoise-v1` is a
-422, not a no-op. `cv-restore-v1`, `cv-headshot-v1` and `cv-denoise-v1` rebuild a face as a
-close likeness rather than the original pixels, `cv-faces-v1` draws a small face to fit
-rather than recovering it, and `cv-enhance-v3` makes an informed estimate of fine detail, so
-small text can come back with made-up letters and a small face as a likeness; keep the source. Stills only; video is not yet in service.
+422, not a no-op. The models make an informed estimate of fine detail, so small text can come
+back with made-up letters and a small face as a likeness rather than the person. Tell the user
+before they rely on either. `cv-restore-v1`, `cv-headshot-v1` and `cv-denoise-v1` also rebuild a
+larger face as a close likeness rather than the original pixels, so keep the source.
 
 ## The explicit path
 
@@ -279,8 +277,8 @@ Over raw HTTP it is `POST /v1/quotes`. Binning lowers a price but is still only 
 photograph, not a way to pay less. Where a price depends on the faces redrawn it is known only
 once the job finishes, so the quote is `credits_at_most`. A batch of mixed sizes is priced image
 by image. When it can be done more than one way, say which you would run and what each costs.
-In `cv.usage()` the balance is `credits_remaining`; `credits_spent` is what the account has
-spent, all time.
+In `cv.usage()`, `subscribed` says whether the account has a subscription, and the balance is
+`credits_remaining`.
 
 A balance smaller than the cost, zero included, is not a reason to stop or to tell the user
 they need credit: nothing past the balance is collected, and an account that is not paying
