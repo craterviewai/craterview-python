@@ -1,6 +1,6 @@
 ---
 name: enhance
-description: Call the CraterView.ai image enhancement API from code — upscale, sharpen, denoise, repair a damaged print, make a headshot, redraw small faces in a group photo, screen an image against the content policy, or tell whether a photo was made by AI — using the Python or TypeScript client, or the HTTP API directly. Covers getting an API key, the upload-submit-collect flow, retries, webhooks and cost. Use when writing or running code against the API; if the CraterView.ai MCP server is connected and the user just wants an image enhanced, the craterview plugin is the one.
+description: Call the CraterView.ai image enhancement API from code — upscale, sharpen, denoise, repair a damaged print, make a headshot, redraw small faces in a group photo, screen an image against the content policy, tell whether a photo was made by AI, or check whether CraterView.ai made or changed an image — using the Python or TypeScript client, or the HTTP API directly. Covers getting an API key, the upload-submit-collect flow, retries, webhooks and cost. Use when writing or running code against the API; if the CraterView.ai MCP server is connected and the user just wants an image enhanced, the craterview plugin is the one.
 ---
 
 # Call the CraterView.ai API
@@ -25,8 +25,9 @@ reaches it:
 
 ## Getting an API key
 
-Every `/v1` route needs a key except two reads: the model catalogue (`GET /v1/models`) and
-the public gallery (`GET /v1/gallery/public`). So this comes before any code that calls the
+Every `/v1` route needs a key except three reads: the model catalogue (`GET /v1/models`), the
+public gallery (`GET /v1/gallery/public`) and what a mark names (`GET /v1/marks/{mark}`). So this
+comes before any code that calls the
 API. **Check for a key first**, and do not write or run anything against the API until there
 is one:
 
@@ -152,6 +153,7 @@ print, a headshot, a check.
 | A photograph with a face turned into a professional headshot | `cv-headshot-v1`, Headshot | — |
 | An image screened against the content policy, unchanged | `cv-content-check-v1`, Content Check | — |
 | To know whether an image was generated rather than captured, unchanged | `cv-real-check-v2`, Real Check | An estimate, not a certificate: do not act on `uncertain` either way, and `real` means no sign was found, not that the image is untouched. A restored or enhanced photograph can read as `generated` |
+| To know whether CraterView.ai made or changed an image | `cv-mark-check-v1`, Mark Check | `not_found` is not proof: a screenshot drops the credential and heavy editing can remove the watermark |
 | The plumbing proved before anything is spent — the first call, a new integration, a test suite | `echo`, Echo | No app offers it |
 
 Every image model takes `output_format`, and all but `echo` `quality`; the catalogue says what
@@ -175,7 +177,9 @@ with `model`, `input_key` and `params` (add `?wait=25` to hold the response for 
 result), and `GET /v1/jobs/{id}`. Image bytes never pass through the API — uploads go to
 storage on a presigned URL and results come back the same way. To run a job on what another
 returned, `POST /v1/uploads/from-job` with its `job_id` answers with an `input_key` for the result,
-without the file leaving storage. For `cv-enhance-v3`, the original photograph is strongly
+without the file leaving storage. Prefer it to downloading and uploading the result: a model that
+marks then works from the result as it was before CraterView.ai's marks, so its own result carries
+one mark and its Content Credential names the earlier one. For `cv-enhance-v3`, the original photograph is strongly
 recommended, before any other model: it might not work well on another model's result.
 
 For a shell script, a CI step or a language the clients do not cover, `reference/http.md`

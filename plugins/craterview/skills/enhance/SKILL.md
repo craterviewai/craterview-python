@@ -1,6 +1,6 @@
 ---
 name: enhance
-description: Sharpen, enlarge, denoise, repair or check a photograph with CraterView.ai's hosted tools (upload_photo, view_photo, enhance_photo, denoise_photo, restore_photo, make_headshot, redraw_small_faces, check_content, check_real, quote, get_job) — "upscale this", "make it less blurry", "fix this old photo", "was this made by AI?" — and see the account's balance and past jobs. Use when the CraterView.ai server is connected; if the user wants to call the API from their own code instead, the craterview-api plugin is the one.
+description: Sharpen, enlarge, denoise, repair or check a photograph with CraterView.ai's hosted tools (upload_photo, view_photo, enhance_photo, denoise_photo, restore_photo, make_headshot, redraw_small_faces, check_content, check_real, check_mark, quote, get_job) — "upscale this", "make it less blurry", "fix this old photo", "was this made by AI?", "was this made with CraterView.ai?" — and see the account's balance and past jobs. Use when the CraterView.ai server is connected; if the user wants to call the API from their own code instead, the craterview-api plugin is the one.
 ---
 
 # Enhance an image with CraterView.ai
@@ -15,8 +15,8 @@ The server's tools:
 - `enhance_photo`, `denoise_photo`, `restore_photo`, `make_headshot`, `redraw_small_faces` —
   one tool per task: run that task on one image. Most images finish inside the call, with links
   in `job.result.output`.
-- `check_content`, `check_real` — check one image, changing nothing. The answer is in
-  `job.result`.
+- `check_content`, `check_real`, `check_mark` — check one image, changing nothing. The answer is
+  in `job.result`. `check_mark` says whether CraterView.ai made or changed the image.
 - `quote` — what a job would charge for an image, and the settings its tool would send, without
   running anything.
 - `get_job` — collect a job that its tool returned as `queued` or `running`, or get fresh links
@@ -120,8 +120,10 @@ the image again.
   stays on the computer until the user says to run: to price it, read its width and height in your
   shell and give those to `quote`.
 - **What an earlier job returned:** give that job's `id` as `job_id`, and nothing is downloaded.
-  For `enhance_photo`, the original photo is strongly recommended, before Denoise or Restore: it
-  might not work well on a result.
+  The next model works from the result as it was before CraterView.ai's marks, so its own result
+  carries one mark and records the earlier one; a result downloaded and sent as a file is marked
+  over its mark. For `enhance_photo`, the original photo is strongly recommended, before Denoise
+  or Restore: it might not work well on a result.
 - **`image_base64` is the last resort,** for a very small file you cannot send any other way. It is
   text in your context; a one-megabyte image is hundreds of thousands of tokens. A `data:` URL is
   accepted.

@@ -739,6 +739,29 @@ class CraterView:
                                   put.status_code)
         return Upload(slot["input_key"], megapixels=_megapixels(data))
 
+    def upload_from_job(self, job: "Job | str") -> Upload:
+        """A finished job's result as a new upload, made in storage without downloading it:
+        its key, for `submit()`, as `upload()` returns one.
+
+        This is how to run another model on a result. A model that marks its result works
+        from a result sent on this way as it was before CraterView.ai's marks, so the new
+        result carries one mark, and its Content Credential names the earlier result as what
+        it came from. A result downloaded and passed to `upload()` is a new file instead, and
+        is marked over its marks.
+
+        `job` is a `Job` or its `id`: a job of this account's that succeeded, whose pictures
+        have not been deleted. The new upload is a file of its own, deleted a day after it was
+        made as every upload is, and it counts towards the same allowance as `upload()`.
+        Anything that is not a job id raises `InvalidId` without a request being made.
+        """
+        job_id = _issued("job", job.id if isinstance(job, Job) else job, "job")
+        answer = self._request("POST", "/v1/uploads/from-job", json={"job_id": job_id})
+        # The result's size, where the job says it, declared at submit as an upload's is.
+        megapixels = None
+        if isinstance(job, Job) and job.output_width and job.output_height:
+            megapixels = job.output_width * job.output_height / 1_000_000
+        return Upload(answer["input_key"], megapixels=megapixels)
+
     def submit(self, model: str, input_key: str, *, wait: float = 0,
                idempotency_key: str | None = None, webhook_url: str | None = None,
                custom_id: str | None = None, input_megapixels: float | None = None,
@@ -966,10 +989,14 @@ class CraterView:
             f'wait_for("{job_id}") or job("{job_id}"); submitting the request again starts a '
             f"second job, charged as well.", job_id=job_id)
 
-    def run(self, image: str | Path | bytes | BinaryIO, *, model: str = "cv-enhance-v3",
+    def run(self, image: "str | Path | bytes | BinaryIO | Job", *, model: str = "cv-enhance-v3",
                 wait: float = MAX_SERVER_WAIT, timeout: float = 600,
                 raise_on_failure: bool = True, **params) -> Job:
         """Upload, submit and wait, in one call — the common case.
+
+        `image` is a file, its bytes, or a finished `Job`, whose result is sent on with
+        `upload_from_job()` rather than downloaded and uploaded again:
+        `cv.run(enhanced, model="cv-faces-v1")`.
 
         Uses server-side waiting first so a fast job costs a single round trip, then falls
         back to polling for anything slower. The server is asked to hold the submission for at
@@ -986,7 +1013,7 @@ class CraterView:
         both times by the API's own 503, which it answers before anything is recorded, the
         error says so in its words.
         """
-        input_key = self.upload(image)
+        input_key = self.upload_from_job(image) if isinstance(image, Job) else self.upload(image)
         key = params.pop("idempotency_key", None) or new_idempotency_key()
 
         def submitted() -> Job:

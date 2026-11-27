@@ -30,6 +30,8 @@ Each model has its own page on the site:
   `cv-headshot-v1` turns a photo of a person into a professional headshot.
 - [AI image detector](https://craterview.ai/features/real-or-ai): `cv-real-check-v2`
   estimates whether an image was made by a generative model.
+- [Check whether an image was made with CraterView.ai](https://craterview.ai/features/mark-check):
+  `cv-mark-check-v1` reads the marks on every image CraterView.ai makes or changes.
 - [AI content moderation for images](https://craterview.ai/features/content-moderation):
   `cv-content-check-v1` screens an image against the content policy.
 
@@ -117,6 +119,23 @@ data = job.bytes()
 
 Image bytes never pass through the API. `upload()` PUTs them straight to object storage on
 a presigned URL and `bytes()` GETs the result the same way; the API moves keys, not pixels.
+
+## Sending a result on
+
+To run another model on a result, give `run()` the finished job, or make its upload with
+`upload_from_job()`:
+
+```python
+enhanced = cv.run("group.jpg", scale=2)
+faces = cv.run(enhanced, model="cv-faces-v1")
+
+input_key = cv.upload_from_job(enhanced)                 # the same, step by step
+```
+
+The result is copied inside storage, never downloaded. A model that marks its result works from
+it as it was before CraterView.ai's marks, so the new result carries one mark, and its Content
+Credential names the earlier result as what it came from. A result downloaded and uploaded again
+is marked over its marks.
 
 ## Retries are yours to write
 
